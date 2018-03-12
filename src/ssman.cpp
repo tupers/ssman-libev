@@ -136,7 +136,6 @@ void ssman::exec()
 
 int main()
 {
-#define ADDR "/home/tupers/test.sock"
 	ssman man;
 	auto ret = man.init();
 	if(ret<0)
@@ -145,5 +144,4 @@ int main()
 		return -1;
 	}
 	man.exec();	
-	cout<<"here"<<endl;
 }
