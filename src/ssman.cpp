@@ -113,7 +113,7 @@ int ssman::init()
 	}
 	
 	//set up watcher into loop
-	
+		
 	//first unix sock watcher
 	m_vecWatcher[0]->set(m_loop);
 	m_vecWatcher[0]->set(m_fdSSSock,ev::READ);
@@ -130,7 +130,6 @@ int ssman::init()
 
 void ssman::exec()
 {
-	while(1)
 	m_loop.run(0);
 }
 

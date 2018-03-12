@@ -28,6 +28,7 @@ class ssman
 	private:
 		int createUnixSocket(string path);
 		int createUdpSocket(int port);
+		
 		vector<ev::io*> m_vecWatcher;
 		ev::default_loop m_loop;
 		int m_fdWebSock=-1;
