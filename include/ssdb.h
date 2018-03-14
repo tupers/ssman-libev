@@ -4,6 +4,8 @@
 using namespace std;
 
 //sql cmd
+#define SSDB_CREATE "CREATE TABLE managerDB("
+
 
 class ssdb
 {
