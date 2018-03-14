@@ -48,7 +48,7 @@ static int createUdpSocket(int port)
 }
 
 //ssman evio cb
-static void ss_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
+static void ss_cb(EV_P_ ev_io* watcher, int revents)
 {
 	if(EV_ERROR & revents)
 	{
@@ -73,7 +73,8 @@ static void ss_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
 	//save data usage in hash table
 	printf("from ss:%s\n",buffer);
 }
-static void web_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
+
+static void web_cb(EV_P_ ev_io* watcher, int revents)
 {
 	if(EV_ERROR & revents)
 	{
@@ -100,6 +101,14 @@ static void web_cb(struct ev_loop* loop, struct ev_io* watcher, int revents)
 	printf("from web:%s\n",buffer);
 }
 
+static void sendtoDb_cb(EV_P_ ev_timer* watcher, int revents)
+{
+	//send all msg from hash table to remote db
+	time_t timep;
+	time(&timep);
+	printf("time to send msg.%s",ctime(&timep));
+}
+
 int ssman_init(ssman_event* obj)
 {
 	//fill struc_event
@@ -113,6 +122,15 @@ int ssman_init(ssman_event* obj)
 		return SS_ERR;
 	}
 	memset(obj->ioObj,0,sizeof(ssman_ioEvent)*obj->ioObjNum);
+	
+	obj->toObjNum = SS_TOEVENT_NUM;
+	obj->toObj = (ssman_toEvent*)malloc(sizeof(ssman_toEvent)*obj->toObjNum);
+	if(obj->toObj == NULL)
+	{
+		ssman_deinit(obj);
+		return SS_ERR;
+	}
+	memset(obj->toObj,0,sizeof(ssman_toEvent)*obj->toObjNum);
 
 	//ss event with unix socket
 	ssman_ioEvent* ssEvent = &(obj->ioObj[0]);
@@ -152,31 +170,58 @@ int ssman_init(ssman_event* obj)
 	webEvent->cb = web_cb;
 	ev_io_init(webEvent->watcher, webEvent->cb, webEvent->fd, EV_READ);
 	
+	// time out event with sending datausage to remote datebase
+	ssman_toEvent* sendtoDbEvent = &(obj->toObj[0]);
+	sendtoDbEvent->watcher = (ev_timer*)malloc(sizeof(ev_timer));
+	if(sendtoDbEvent->watcher == NULL)
+	{
+		ssman_deinit(obj);
+		return SS_ERR;
+	}
+
+	sendtoDbEvent->cb = sendtoDb_cb;
+	ev_timer_init(sendtoDbEvent->watcher, sendtoDbEvent->cb, SS_TIMEOUT, SS_TIMEOUT);
+
 	//bind event with loop
 	ev_io_start(obj->loop, ssEvent->watcher);
 	ev_io_start(obj->loop, webEvent->watcher);
+	ev_timer_start(obj->loop, sendtoDbEvent->watcher);
 
 	return SS_OK;
 }
 
 void ssman_deinit(ssman_event* obj)
 {
-	if(obj->ioObj == NULL)
-		return;
-
-	//free ssman_ioEvent
 	int i;
-	for( i=0; i<obj->ioObjNum; i++)
+	
+	//free ssman_ioEvent
+	if(obj->ioObj != NULL)
 	{
-		ssman_ioEvent* io = &(obj->ioObj[i]);
-		if(io->fd>0)
-			close(io->fd);
-		if(io->watcher!=NULL)
-			free(io->watcher);
+		for( i=0; i<obj->ioObjNum; i++)
+		{
+			ssman_ioEvent* io = &(obj->ioObj[i]);
+			if(io->fd>0)
+				close(io->fd);
+			if(io->watcher!=NULL)
+				free(io->watcher);
+		}
+		
+		free(obj->ioObj);
 	}
 
-	//free ssman_event
-	free(obj->ioObj);
+	//free ssman_toEvent
+	if(obj->toObj != NULL)
+	{
+		for( i=0; i<obj->toObjNum; i++)
+		{
+			ssman_toEvent* to = &(obj->toObj[i]);
+			if(to->watcher!=NULL)
+				free(to->watcher);
+		}
+		
+		free(obj->ioObj);
+	}
+	
 }
 
 void ssman_exec(ssman_event* obj)
