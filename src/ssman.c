@@ -1,6 +1,7 @@
 #include "ssman.h"
 
 //static variable
+static ssman_hashtable* portTable = NULL;
 
 //socket create function;
 static int createUnixSocket(const char* path)
