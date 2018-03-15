@@ -17,3 +17,5 @@ int addPort(int key, sshash_ctx ctx, sshash_table* table);
 sshash_table* findPort(int key, sshash_table* table);
 int deletePort(int key, sshash_table* table);
 void cleanPort(sshash_table* table);
+int countPort(sshash_table* table);
+

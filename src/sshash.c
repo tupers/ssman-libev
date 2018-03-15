@@ -45,6 +45,16 @@ int deletePort(int key, sshash_table* table)
 
 void cleanPort(sshash_table* table)
 {
-	sshash_table* iter=NULL;
-	sshash_table* s=NULL;
+	sshash_table* s = NULL;
+	sshash_table* tmp = NULL;
+	HASH_ITER(hh,table,s,tmp)
+	{
+		HASH_DEL(table,s);
+		free(s);
+	}
+}
+
+int countPort(sshash_table* table)
+{
+	return HASH_COUNT(table);
 }

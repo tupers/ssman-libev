@@ -9,6 +9,7 @@
 #include <time.h>
 #include <ev.h>
 #include "sstype.h"
+#include "sshash.h"
 
 //event config
 #define SS_IOEVENT_NUM 	2	//0:unix ss event; 1:udp web event;
@@ -45,3 +46,6 @@ typedef struct{
 int ssman_init(ssman_event*);
 void ssman_deinit(ssman_event*);
 void ssman_exec(ssman_event*);
+void ssman_parseMsg_ss(char* msg);
+void ssman_parseMsg_web(char* msg);
+

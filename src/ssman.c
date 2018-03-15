@@ -1,7 +1,7 @@
 #include "ssman.h"
 
 //static variable
-static ssman_hashtable* portTable = NULL;
+static sshash_table* portTable = NULL;
 
 //socket create function;
 static int createUnixSocket(const char* path)
@@ -69,7 +69,7 @@ static void ss_cb(EV_P_ ev_io* watcher, int revents)
 		return;
 	}
 	buffer[len]='\0';
-
+	
 	//parse data drop wrong data
 	//save data usage in hash table
 	printf("from ss:%s\n",buffer);
