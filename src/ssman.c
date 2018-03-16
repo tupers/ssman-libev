@@ -69,10 +69,10 @@ static void ss_cb(EV_P_ ev_io* watcher, int revents)
 		return;
 	}
 	buffer[len]='\0';
-	
-	//parse data drop wrong data
-	//save data usage in hash table
-	printf("from ss:%s\n",buffer);
+
+	//parse data drop wrong data, save data usage in hash table
+	int ret = ssman_parseMsg_ss(buffer);
+	printf("from ss: operation %d\n",ret);
 }
 
 static void web_cb(EV_P_ ev_io* watcher, int revents)
@@ -108,6 +108,7 @@ static void sendtoDb_cb(EV_P_ ev_timer* watcher, int revents)
 	time_t timep;
 	time(&timep);
 	printf("time to send msg.%s",ctime(&timep));
+	printf("hash table num: %d\n",countPort(portTable));
 }
 
 int ssman_init(ssman_event* obj)
@@ -211,6 +212,7 @@ void ssman_deinit(ssman_event* obj)
 	}
 
 	//free ssman_toEvent
+	
 	if(obj->toObj != NULL)
 	{
 		for( i=0; i<obj->toObjNum; i++)
@@ -220,8 +222,9 @@ void ssman_deinit(ssman_event* obj)
 				free(to->watcher);
 		}
 		
-		free(obj->ioObj);
+		free(obj->toObj);
 	}
+	
 	
 }
 
@@ -230,13 +233,68 @@ void ssman_exec(ssman_event* obj)
 	ev_run(obj->loop,0);
 }
 
+int ssman_parseMsg_ss(char* msg)
+{
+	//ss-sever will send stat: {"0000":0}
+	if(strncmp("stat",msg,4)!=0)
+	{
+		//wrong msg, drop and log
+		return SS_ERR;
+	}
+
+	//now find the command ctx
+	char* start = strchr(msg,'{');
+	if(start == NULL)
+	{
+		//wrong command ctx, drop and log
+		return SS_ERR;
+	}
+	
+	json_value *obj = json_parse(start,strlen(msg)-(start-msg));
+	if(obj==NULL)
+	{
+		//wrong json format, drop and log
+		return SS_ERR;
+	}
+	
+	if(obj->type != json_object)
+	{
+		//wrong json format, drop and log
+		json_value_free(obj);
+		return SS_ERR;
+	}
+
+	//take the first line json ctx
+	char* name = obj->u.object.values[0].name;
+	json_value* value = obj->u.object.values[0].value;
+	if(value->type != json_integer)
+	{
+		//wrong json format, drop and log
+		json_value_free(obj);
+		return SS_ERR;
+	}
+	
+	//add it into hash table
+	sshash_ctx ctx;	
+	time_t timep;
+
+	time(&timep);
+	ctx.dataUsage = value->u.integer;
+	ctx.time = timep;
+	json_value_free(obj);
+
+	return addPort(value->u.integer,ctx,portTable);
+}
+
 int main()
 {
 	ssman_event obj;
 	if(ssman_init(&obj)==SS_OK)
 	{
 		ssman_exec(&obj);
+		printf("here\n");
 		ssman_deinit(&obj);
 	}
+
 	return 0;
 }

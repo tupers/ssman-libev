@@ -9,6 +9,7 @@
 #include <time.h>
 #include <ev.h>
 #include "sstype.h"
+#include "json.h"
 #include "sshash.h"
 
 //event config
@@ -17,7 +18,7 @@
 #define SS_TIMEOUT 	10
 #define SS_DEFAULT_PORT 8000
 #define SS_RECVBUF_SIZE 1024
-#define SS_UNIX_PATH 	"/home/tupers/test.sock"
+#define SS_UNIX_PATH 	"/tmp/evtest.sock"
 
 typedef void(*IO_CB)(EV_P_ ev_io* watcher, int revents);
 typedef void(*TO_CB)(EV_P_ ev_timer* watcher, int revents);
@@ -46,6 +47,6 @@ typedef struct{
 int ssman_init(ssman_event*);
 void ssman_deinit(ssman_event*);
 void ssman_exec(ssman_event*);
-void ssman_parseMsg_ss(char* msg);
-void ssman_parseMsg_web(char* msg);
+int ssman_parseMsg_ss(char* msg);
+int ssman_parseMsg_web(char* msg);
 
