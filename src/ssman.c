@@ -1,7 +1,8 @@
 #include "ssman.h"
 
 //static variable
-static sshash_table* portTable = NULL;
+static sshash_table* g_portTable = NULL;
+static ssman_config* g_config = NULL;
 
 //socket create function;
 static int createUnixSocket(const char* path)
@@ -72,7 +73,7 @@ static void ss_cb(EV_P_ ev_io* watcher, int revents)
 
 	//parse data drop wrong data, save data usage in hash table
 	int ret = ssman_parseMsg_ss(buffer);
-	printf("from ss: operation %d\n",ret);
+	printf("from ss: msg: %s, result: %d\n",buffer,ret);
 }
 
 static void web_cb(EV_P_ ev_io* watcher, int revents)
@@ -98,8 +99,15 @@ static void web_cb(EV_P_ ev_io* watcher, int revents)
 
 	//parse data drop wrong data
 	//operate remote cmd
-	//answer remote anyway
-	printf("from web:%s\n",buffer);
+	char* ack;
+
+	int ret = ssman_parseMsg_web(buffer);
+	if(ret == SS_OK)
+		ack = SS_ACK_OK;
+	else
+		ack = SS_ACK_ERR;
+	sendto(watcher->fd,ack,strlen(ack),0,(struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
+	printf("from web: result: %d,msg: %s",ret,buffer);
 }
 
 static void sendtoDb_cb(EV_P_ ev_timer* watcher, int revents)
@@ -107,13 +115,56 @@ static void sendtoDb_cb(EV_P_ ev_timer* watcher, int revents)
 	//send all msg from hash table to remote db
 	time_t timep;
 	time(&timep);
+	int num = countPort(&g_portTable);
 	printf("time to send msg.%s",ctime(&timep));
-	printf("hash table num: %d\n",countPort(portTable));
+	printf("hash table num: %d\n",num);
+	//ev_break(EV_A_ EVBREAK_ALL);
+	
+	listPort(&g_portTable,NULL,&num);
+	sshash_table** list = (sshash_table**)malloc(sizeof(sshash_table)*num);
+	listPort(&g_portTable,list,NULL);
+	int i;
+	for(i=0;i<num;i++)
+		printf("port: %d, data: %d\n",list[i]->key,list[i]->ctx.dataUsage);
+	free(list);
+
+}
+
+//ssman utils
+static char* createCmdString(ssman_cmd_detail* detail)
+{
+	static char cmd[SS_CMD_SIZE];
+	memset(cmd,0,SS_CMD_SIZE);
+
+	//build cmd
+	snprintf(cmd,SS_CMD_SIZE,"ss-server -s 0.0.0.0 -l 1080 -p %d -k %s -m %s -u --manager-address %s -f /tmp/.shadowsocks_%d.pid",detail->server_port,detail->password,detail->config->method,detail->config->manager_address,detail->server_port);
+
+	return cmd;
+}
+
+int ssman_loadConfig()
+{
+	g_config = (ssman_config*)malloc(sizeof(ssman_config));
+	if(g_config == NULL)
+	{
+		//err log
+		return SS_ERR;
+	}
+	
+	strncpy(g_config->manager_address,SS_UNIX_PATH,32);
+	g_config->manager_address[31]='\0';
+	strncpy(g_config->method,"aes-256-cfb",16);
+	g_config->method[15]='\0';
+
+	return SS_OK;
 }
 
 int ssman_init(ssman_event* obj)
 {
-	//fill struc_event
+	if(obj == NULL)
+		return SS_ERR;
+
+	//fill event struct
 	memset(obj,0,sizeof(ssman_event));
 	obj->loop = EV_DEFAULT;
 	obj->ioObjNum = SS_IOEVENT_NUM;
@@ -225,8 +276,24 @@ void ssman_deinit(ssman_event* obj)
 		free(obj->toObj);
 	}
 	
-	
 }
+
+void ssman_cleanGlobal()
+{
+	if(g_config)
+	{
+		free(g_config);
+		g_config = NULL;
+	}
+
+	if(g_portTable)
+	{
+		cleanPort(&g_portTable);
+		g_portTable = NULL;
+	}
+
+}
+
 
 void ssman_exec(ssman_event* obj)
 {
@@ -280,21 +347,126 @@ int ssman_parseMsg_ss(char* msg)
 
 	time(&timep);
 	ctx.dataUsage = value->u.integer;
-	ctx.time = timep;
 	json_value_free(obj);
 
-	return addPort(value->u.integer,ctx,portTable);
+	return updatePort(atoi(name),ctx,&g_portTable);
+}
+
+int ssman_parseMsg_web(char* msg)
+{
+	//msg from web is a json file as show below
+	//{
+	//	"cmd"="xxx";
+	//	"port"=1234;
+	//	"password"="xxx";
+	//}
+	
+	//position the ctx
+	char* start =strchr(msg,'{');
+	if(start == NULL)
+	{
+		//wrong command ctx, frop and log
+		return SS_ERR;
+	}
+
+	json_value *obj = json_parse(start,strlen(msg)-(start-msg));
+	if(obj == NULL || obj->type != json_object)
+	{
+		//wrong json format, drop and log
+		return SS_ERR;
+	}
+
+	//init value for json
+	ssman_cmd_detail detail;
+	char cmd[16];
+	memset(&detail,0,sizeof(ssman_cmd_detail));
+	memset(cmd,0,16);
+	detail.config = g_config;
+
+	unsigned int i;
+	for(i=0;i<obj->u.object.length;i++)
+	{
+		char* name = obj->u.object.values[i].name;
+		json_value* value = obj->u.object.values[i].value;
+		if(strcmp(name,"cmd")==0)
+		{
+			strncpy(cmd,value->u.string.ptr,16);
+			cmd[15]='\0';
+		}
+		else if(strcmp(name,"server_port")==0)
+			detail.server_port = value->u.integer;
+		else if(strcmp(name,"password")==0)
+		{
+			strncpy(detail.password,value->u.string.ptr,32);
+			detail.password[31]='\0';
+		}
+	}
+
+	json_value_free(obj);
+
+	char* systemCmd = NULL;
+	//operate cmd
+	if(strcmp(cmd,"add")==0)
+	{
+		//check neccesary option in detail
+		if(strlen(detail.password) == 0 || detail.server_port == 0)
+		{
+			//err log
+			return SS_ERR;
+		}
+
+		//build cmd for system()
+		systemCmd = createCmdString(&detail);
+		if(systemCmd == NULL)
+		{
+			//err log
+			return SS_ERR;
+		}
+
+		printf("%s\n",systemCmd);
+		//system()
+		if(system(systemCmd) == -1)
+		{
+			//err log
+			return SS_ERR;
+		}
+
+		//if system succeed, add this port into hash table
+		sshash_ctx ctx;
+		memset(&ctx,0,sizeof(sshash_ctx));
+		if(addPort(detail.server_port,ctx,&g_portTable) == SS_ERR)
+		{
+			//err log
+			return SS_ERR;
+		}
+	}
+
+	return SS_OK;
 }
 
 int main()
 {
+	
 	ssman_event obj;
-	if(ssman_init(&obj)==SS_OK)
+	if(ssman_init(&obj)!=SS_OK)
 	{
-		ssman_exec(&obj);
-		printf("here\n");
+		printf("init failed.\n");
 		ssman_deinit(&obj);
+		return -1;
 	}
 
+	if(ssman_loadConfig()!=SS_OK)
+	{
+		printf("load config failed.\n");
+		ssman_deinit(&obj);
+		ssman_cleanGlobal();
+		return -1;
+	}
+	
+	ssman_exec(&obj);
+	printf("finish.\n");
+	ssman_deinit(&obj);
+	ssman_cleanGlobal();
+	
 	return 0;
 }

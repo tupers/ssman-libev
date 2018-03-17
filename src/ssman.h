@@ -20,6 +20,8 @@
 #define SS_RECVBUF_SIZE 1024
 #define SS_UNIX_PATH 	"/tmp/evtest.sock"
 
+#define SS_CMD_SIZE	SS_RECVBUF_SIZE
+
 typedef void(*IO_CB)(EV_P_ ev_io* watcher, int revents);
 typedef void(*TO_CB)(EV_P_ ev_timer* watcher, int revents);
 
@@ -43,9 +45,23 @@ typedef struct{
 	ssman_toEvent* toObj;
 }ssman_event;
 
+typedef struct{
+	char manager_address[32];
+	char method[16];
+}ssman_config;
+
+typedef struct{
+	//char cmd[16];
+	int server_port;
+	char password[32];
+	ssman_config* config;
+}ssman_cmd_detail;
+
 //function
+int ssman_loadConfig();
 int ssman_init(ssman_event*);
 void ssman_deinit(ssman_event*);
+void ssman_cleanGlobal();
 void ssman_exec(ssman_event*);
 int ssman_parseMsg_ss(char* msg);
 int ssman_parseMsg_web(char* msg);
