@@ -25,6 +25,8 @@
 #define SS_UNIX_PATH 	"/tmp/evtest.sock"
 
 #define SS_CMD_SIZE	SS_RECVBUF_SIZE
+#define SS_CMD_SIZE_SMALL	SS_CMD_SIZE/8
+#define SS_RESULT_SIZE	SS_RECVBUF_SIZE
 
 typedef void(*IO_CB)(EV_P_ ev_io* watcher, int revents);
 typedef void(*TO_CB)(EV_P_ ev_timer* watcher, int revents);
@@ -74,5 +76,5 @@ int ssman_init(ssman_obj*);
 void ssman_deinit(ssman_obj*);
 void ssman_exec(ssman_event*);
 int ssman_parseMsg_ss(char* msg, ssman_obj* obj);
-int ssman_parseMsg_web(char* msg, ssman_obj* obj);
-
+int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result);
+void ssman_deamonize(char* path);
