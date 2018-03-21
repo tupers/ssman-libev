@@ -152,41 +152,103 @@ static char* createCmdString(ssman_cmd_detail* detail)
 	return cmd;
 }
 
-int ssman_loadConfig(ssman_config** conf)
+ssman_config* ssman_loadConfig(char* cfgPath)
 {
-	
-	*conf = (ssman_config*)malloc(sizeof(ssman_config));
-	if(*conf == NULL)
+	if(cfgPath == NULL)
+		return NULL;
+
+	//open cfg file
+	FILE* cfgFd = fopen(cfgPath,"r");
+	if(cfgFd == NULL)
+		return NULL;
+
+	char* cfgCtx = (char*)malloc(sizeof(char)*SS_CFG_SIZE);
+	if(cfgCtx == NULL)
 	{
-		//err log
-		return SS_ERR;
+		fclose(cfgFd);
+		return NULL;
 	}
 
-	memset(*conf,0,sizeof(ssman_config));
-	
-	ssman_config* cfg = *conf;
-	
-	strncpy(cfg->manager_address,SS_UNIX_PATH,32);
-	cfg->manager_address[31]='\0';
-	strncpy(cfg->method,"aes-256-cfb",16);
-	cfg->method[15]='\0';
+	//check cfg file size
+	fseek(cfgFd,0,SEEK_END);
+	int len = ftell(cfgFd);
+	if(len > SS_CFG_SIZE)
+	{
+		free(cfgCtx);
+		fclose(cfgFd);
+		return NULL;
+	}
 
+	fseek(cfgFd,0,SEEK_SET);
+	fread(cfgCtx,1,SS_CFG_SIZE,cfgFd);
+	fclose(cfgFd);
+	
+	//parse cfg as json file
+	json_value *json_obj = json_parse(cfgCtx,len);
+	if(json_obj == NULL)
+	{
+		free(cfgCtx);
+		return NULL;
+	}
 
-	return SS_OK;
+	if(json_obj->type != json_object)
+	{
+		json_value_free(json_obj);
+		free(cfgCtx);
+		return NULL;
+	}
+	
+	free(cfgCtx);
+		
+	//malloc ssman config
+	ssman_config* cfg = (ssman_config*)malloc(sizeof(ssman_config));
+	if(cfg == NULL)
+	{
+		json_value_free(json_obj);
+		return NULL;
+	}
+
+	memset(cfg,0,sizeof(ssman_config));
+	
+	//fill ssman config	
+	unsigned int i;
+	for(i=0;i<json_obj->u.object.length;i++)
+	{
+		char* name = json_obj->u.object.values[i].name;
+		json_value* value = json_obj->u.object.values[i].value;
+		if(strcmp(name,"manager_address")==0)
+		{
+			strncpy(cfg->manager_address,value->u.string.ptr,SS_CFG_OPT_SIZE);
+			cfg->manager_address[SS_CFG_OPT_SIZE-1]='\0';
+		}
+		else if(strcmp(name,"method")==0)
+		{
+			strncpy(cfg->method,value->u.string.ptr,SS_CFG_OPT_SIZE);
+			cfg->method[SS_CFG_OPT_SIZE-1]='\0';
+		}
+	}
+	json_value_free(json_obj);
+
+	//check ssman config if opt is NULL give it a default value
+	if(cfg->manager_address[0] == '\0')
+	{
+		strncpy(cfg->manager_address,SS_UNIX_PATH,SS_CFG_OPT_SIZE);
+		cfg->manager_address[SS_CFG_OPT_SIZE-1]='\0';
+	}
+
+	if(cfg->method[0] == '\0')
+	{
+		strncpy(cfg->method,"aes-256-cfb",SS_CFG_OPT_SIZE);
+		cfg->method[SS_CFG_OPT_SIZE-1]='\0';
+	}
+
+	return cfg;
 }
 
 int ssman_init(ssman_obj* obj)
 {
 	if(obj == NULL)
 		return SS_ERR;
-
-	memset(obj,0,sizeof(ssman_obj));
-	//-----------------load config--------------------------
-	if(ssman_loadConfig(&(obj->config)) == SS_ERR)
-	{
-		ssman_deinit(obj);
-		return SS_ERR;
-	}
 
 	//init config
 	ssman_config* config = obj->config;
@@ -440,9 +502,12 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 	}
 
 	json_value *json_obj = json_parse(start,strlen(msg)-(start-msg));
-	if(json_obj == NULL || json_obj->type != json_object)
+	if(json_obj == NULL)
+		return SS_ERR;
+
+	if(json_obj->type != json_object)
 	{
-		//wrong json format, drop and log
+		json_value_free(json_obj);
 		return SS_ERR;
 	}
 
@@ -527,8 +592,8 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 			return SS_ERR;
 
 		//find specified ss-server pid file and kill server
-		char path[SS_CMD_SIZE_SMALL];
-		snprintf(path,SS_CMD_SIZE_SMALL,"/tmp/.shadowsocks_%d.pid",detail.server_port);
+		char path[SS_PIDFILE_SIZE];
+		snprintf(path,SS_PIDFILE_SIZE,"/tmp/.shadowsocks_%d.pid",detail.server_port);
 		FILE* pidFd = fopen(path,"r");
 		if(pidFd == NULL)
 			return SS_ERR;
@@ -630,8 +695,13 @@ void ssman_daemonize(char* path)
 
 int main()
 {
-	ssman_daemonize("/tmp/ssdaemon.pid");	
+	//ssman_daemonize("/tmp/ssdaemon.pid");
 	ssman_obj obj;
+	memset(&obj,0,sizeof(ssman_obj));
+	ssman_config* cfg = ssman_loadConfig("/home/tupers/ssman-libev/src/ssmanconf.json");
+	if(cfg == NULL)
+		return -1;
+	obj.config = cfg;
 	if(ssman_init(&obj)!=SS_OK)
 	{
 	//	printf("init failed.\n");

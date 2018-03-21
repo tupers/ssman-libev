@@ -1,0 +1,4 @@
+{
+	"manager_address":"/tmp/ssman.sock",
+	"method":"aes-256-cfb"
+}

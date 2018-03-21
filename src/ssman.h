@@ -25,8 +25,10 @@
 #define SS_UNIX_PATH 	"/tmp/evtest.sock"
 
 #define SS_CMD_SIZE	SS_RECVBUF_SIZE
-#define SS_CMD_SIZE_SMALL	SS_CMD_SIZE/8
+#define SS_PIDFILE_SIZE	SS_CMD_SIZE/8
+#define SS_CFG_SIZE	SS_CMD_SIZE*2
 #define SS_RESULT_SIZE	SS_RECVBUF_SIZE
+#define SS_CFG_OPT_SIZE	SS_CFG_SIZE/16
 
 typedef void(*IO_CB)(EV_P_ ev_io* watcher, int revents);
 typedef void(*TO_CB)(EV_P_ ev_timer* watcher, int revents);
@@ -52,8 +54,8 @@ typedef struct{
 }ssman_event;
 
 typedef struct{
-	char manager_address[32];
-	char method[16];
+	char manager_address[SS_CFG_OPT_SIZE];
+	char method[SS_CFG_OPT_SIZE];
 	int pulseFd;//periodic sending data to remote database
 	struct sockaddr_in remoteAddr;//target address structure that 'pulseFd' send to
 }ssman_config;
@@ -71,7 +73,7 @@ typedef struct{
 	sshash_table* portTable;
 }ssman_obj;
 //function
-int ssman_loadConfig(ssman_config**);
+ssman_config* ssman_loadConfig(char* cfgPath);
 int ssman_init(ssman_obj*);
 void ssman_deinit(ssman_obj*);
 void ssman_exec(ssman_event*);
