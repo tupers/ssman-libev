@@ -152,6 +152,16 @@ static char* createCmdString(ssman_cmd_detail* detail)
 	return cmd;
 }
 
+static void help()
+{
+	printf("\n");
+	printf("\t----Help Information----\n");
+	printf("\t-c\tconfig file path.\n");
+	printf("\t[-f]\trun application in the background and pid file path .\n");
+	printf("\t[-l]\tlog file path.\n");
+	printf("\t[-h]\thelp information.\n");
+}
+
 ssman_config* ssman_loadConfig(char* cfgPath)
 {
 	if(cfgPath == NULL)
@@ -643,7 +653,10 @@ void ssman_daemonize(char* path)
 	/* Fork off the parent process */
 	pid = fork();
 	if(pid<0)
+	{
+		printf("Fork failed.\n");
 		exit(EXIT_FAILURE);
+	}
 
 	/* If we got a good PID, then
 	 * we can exit the parent process. */
@@ -652,14 +665,14 @@ void ssman_daemonize(char* path)
 		FILE* file = fopen(path, "w");
 		if(file == NULL)
 		{
-			printf("invalid pid file.\n");
-			exit(-1);
+			perror("Invalid pid file path.");
+			exit(EXIT_FAILURE);
 		}
 
 
 		fprintf(file, "%d", (int)pid);
 		fclose(file);
-		exit(0);
+		exit(EXIT_SUCCESS);
 	}
 
 	/* Change the file mode mask */
@@ -674,7 +687,7 @@ void ssman_daemonize(char* path)
 	{
 	//	fprintf(fd,"setsid error.\n");
 	//	fclose(fd);
-		exit(-1);
+		exit(EXIT_FAILURE);
 	}
 
 	/* Change the current working directory */
@@ -682,7 +695,7 @@ void ssman_daemonize(char* path)
 	{
 	//	fprintf(fd,"chdir error.\n");
 	//	fclose(fd);
-		exit(-1);
+		exit(EXIT_FAILURE);
 	}
 
 	//fclose(fd);
@@ -693,26 +706,71 @@ void ssman_daemonize(char* path)
 	close(STDERR_FILENO);
 }
 
-int main()
+int main(int argc, char **argv)
 {
+	int c;
+	char* cfgPath 	= NULL;
+	char* pidPath	= NULL;
+	char* logPath 	= NULL;
+
+	opterr = 0;
+
+	while(( c = getopt(argc, argv, "c:f:hl:")) != -1)
+		switch(c){
+			case 'c':
+				cfgPath = optarg;
+				break;
+			case 'f':
+				pidPath = optarg;
+				break;
+			case 'h':
+				help();
+				exit(EXIT_SUCCESS);
+			case 'l':
+				logPath = optarg;
+				break;
+			case '?':
+				opterr = 1;
+				break;
+		}
+
+	if(opterr){
+		help();
+		exit(EXIT_FAILURE);
+	}
+				
 	//ssman_daemonize("/tmp/ssdaemon.pid");
 	ssman_obj obj;
 	memset(&obj,0,sizeof(ssman_obj));
-	ssman_config* cfg = ssman_loadConfig("/home/tupers/ssman-libev/src/ssmanconf.json");
+
+	//load config
+	ssman_config* cfg = ssman_loadConfig(cfgPath);
 	if(cfg == NULL)
-		return -1;
+	{
+		printf("Failed to load config with path: \'%s\'\n",cfgPath);
+		exit(EXIT_FAILURE);
+	}
 	obj.config = cfg;
+
+	//if(logPath) start log
+	
+	if(pidPath)
+		ssman_daemonize(pidPath);
+
+	//ignore SIGPIPE
+	signal(SIGPIPE, SIG_IGN);
+	signal(SIGCHLD, SIG_IGN);
+	signal(SIGABRT, SIG_IGN);
+
 	if(ssman_init(&obj)!=SS_OK)
 	{
-	//	printf("init failed.\n");
+		//log
 		ssman_deinit(&obj);
-		return -1;
+		exit(EXIT_FAILURE);
 	}
 	
 	ssman_exec(obj.event);
-	//printf("finish.\n");
 	ssman_deinit(&obj);
 	
-	
-	return 0;
+	exit(EXIT_SUCCESS);
 }
