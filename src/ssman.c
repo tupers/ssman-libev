@@ -1,4 +1,10 @@
 #include "ssman.h"
+//log fd
+static FILE* g_logFd = NULL;
+#define _LOG_CLOSE					\
+	do{						\
+		if(g_logFd){fclose(g_logFd);}}		\
+	while(0)
 
 //socket create function;
 static int createUnixSocket(const char* path)
@@ -108,7 +114,6 @@ static void sendtoDb_cb(EV_P_ ev_timer* watcher, int revents)
 	sshash_table* table = ((ssman_obj*)watcher->data)->portTable;
 	ssman_config* config = ((ssman_obj*)watcher->data)->config;
 	
-	//ev_break(EV_A_ EVBREAK_ALL);
 	int num = countPort(&table);
 	if(num)
 	{
@@ -160,6 +165,17 @@ static void help()
 	printf("\t[-f]\trun application in the background and pid file path .\n");
 	printf("\t[-l]\tlog file path.\n");
 	printf("\t[-h]\thelp information.\n");
+}
+
+static void _LOG(char* msg)
+{
+	if(g_logFd)
+	{
+		time_t timeStamp;
+		time(&timeStamp);
+		fprintf(g_logFd,"[%s]\t%s\n",ctime(&timeStamp),msg);
+		fflush(g_logFd);
+	}
 }
 
 ssman_config* ssman_loadConfig(char* cfgPath)
@@ -641,6 +657,11 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 		int num = countPort(&obj->portTable);
 		snprintf(result,SS_RESULT_SIZE,"the port num is %d.",num);
 	}
+	else if(strcmp(cmd,"stop") == 0)
+	{
+		//stop event loop
+		ev_break(obj->event->loop, EVBREAK_ALL);
+	}
 
 	return SS_OK;
 }
@@ -685,20 +706,18 @@ void ssman_daemonize(char* path)
 	sid = setsid();
 	if(sid<0)
 	{
-	//	fprintf(fd,"setsid error.\n");
-	//	fclose(fd);
+		_LOG("setsid error.");
+		_LOG_CLOSE;
 		exit(EXIT_FAILURE);
 	}
 
 	/* Change the current working directory */
 	if((chdir("/"))<0)
 	{
-	//	fprintf(fd,"chdir error.\n");
-	//	fclose(fd);
+		_LOG("change directory error.");
+		_LOG_CLOSE;
 		exit(EXIT_FAILURE);
 	}
-
-	//fclose(fd);
 
 	/* Close out the standard file descriptors */
 	close(STDIN_FILENO);
@@ -733,8 +752,9 @@ int main(int argc, char **argv)
 				opterr = 1;
 				break;
 		}
-
-	if(opterr){
+	
+	//check getopt error and cfgPath must be given.
+	if(opterr || cfgPath == NULL){
 		help();
 		exit(EXIT_FAILURE);
 	}
@@ -752,25 +772,37 @@ int main(int argc, char **argv)
 	}
 	obj.config = cfg;
 
-	//if(logPath) start log
+	//start log
+	if(logPath)
+		g_logFd = fopen(logPath,"w");
 	
 	if(pidPath)
+	{
+		if(g_logFd)
+			printf("Start daemonize...,log will be logged in %s.\n",logPath);
+		else
+			printf("Start daemonize without log...\n");
 		ssman_daemonize(pidPath);
+	}
 
 	//ignore SIGPIPE
 	signal(SIGPIPE, SIG_IGN);
 	signal(SIGCHLD, SIG_IGN);
 	signal(SIGABRT, SIG_IGN);
 
+	_LOG("start init.");
 	if(ssman_init(&obj)!=SS_OK)
 	{
-		//log
+		_LOG("init failed.");
+		_LOG_CLOSE;
 		ssman_deinit(&obj);
 		exit(EXIT_FAILURE);
 	}
-	
+
 	ssman_exec(obj.event);
+	_LOG("main loop finished.");
 	ssman_deinit(&obj);
-	
+	_LOG_CLOSE;	
+
 	exit(EXIT_SUCCESS);
 }
