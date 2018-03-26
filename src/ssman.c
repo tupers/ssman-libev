@@ -6,6 +6,16 @@ static FILE* g_logFd = NULL;
 		if(g_logFd){fclose(g_logFd);}}		\
 	while(0)
 
+static void _LOG(char* msg)
+{
+	if(g_logFd)
+	{
+		time_t timeStamp;
+		time(&timeStamp);
+		fprintf(g_logFd,"[%s]\t%s\n",ctime(&timeStamp),msg);
+		fflush(g_logFd);
+	}
+}
 //socket create function;
 static int createUnixSocket(const char* path)
 {
@@ -56,7 +66,7 @@ static void ss_cb(EV_P_ ev_io* watcher, int revents)
 {
 	if(EV_ERROR & revents)
 	{
-		//log error
+		_LOG("ss cb error.");
 		return;
 	}
 
@@ -68,21 +78,22 @@ static void ss_cb(EV_P_ ev_io* watcher, int revents)
 	int len = recvfrom(watcher->fd,buffer,sizeof(buffer),0,(struct sockaddr*)&remoteAddr,(socklen_t*)&remoteAddr_len);
 	if(len<0)
 	{
-		//log error
+		_LOG("ss cb recv error.");
 		return;
 	}
 	buffer[len]='\0';
 
 	//parse data drop wrong data, save data usage in hash table
 	int ret = ssman_parseMsg_ss(buffer,(ssman_obj*)watcher->data);
-	//printf("from ss: msg: %s, result: %d\n",buffer,ret);
+	if(ret == SS_ERR)
+		_LOG("ss cb parse msg error");
 }
 
 static void web_cb(EV_P_ ev_io* watcher, int revents)
 {
 	if(EV_ERROR & revents)
 	{
-		//log error
+		_LOG("web cb error.");
 		return;
 	}
 
@@ -94,7 +105,7 @@ static void web_cb(EV_P_ ev_io* watcher, int revents)
 	int len = recvfrom(watcher->fd, buffer,sizeof(buffer), 0, (struct sockaddr*)&remoteAddr, &remoteAddr_len);
 	if(len < 0)
 	{
-		//log error
+		_LOG("web cb recv error.");
 		return;
 	}
 	buffer[len]='\0';
@@ -103,9 +114,11 @@ static void web_cb(EV_P_ ev_io* watcher, int revents)
 	//operate remote cmd
 	char result[SS_RESULT_SIZE];
 
-	ssman_parseMsg_web(buffer,(ssman_obj*)watcher->data,result);
+	int ret = ssman_parseMsg_web(buffer,(ssman_obj*)watcher->data,result);
+	if(ret == SS_ERR)
+		_LOG("web cb parse msg error.");
+
 	sendto(watcher->fd,result,strlen(result),0,(struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
-	//printf("from web: result: %d,msg: %s",ret,buffer);
 }
 
 static void sendtoDb_cb(EV_P_ ev_timer* watcher, int revents)
@@ -165,17 +178,6 @@ static void help()
 	printf("\t[-f]\trun application in the background and pid file path .\n");
 	printf("\t[-l]\tlog file path.\n");
 	printf("\t[-h]\thelp information.\n");
-}
-
-static void _LOG(char* msg)
-{
-	if(g_logFd)
-	{
-		time_t timeStamp;
-		time(&timeStamp);
-		fprintf(g_logFd,"[%s]\t%s\n",ctime(&timeStamp),msg);
-		fflush(g_logFd);
-	}
 }
 
 ssman_config* ssman_loadConfig(char* cfgPath)
@@ -281,6 +283,7 @@ int ssman_init(ssman_obj* obj)
 	config->pulseFd = createUdpSocket(SS_PULSE_LOCALPORT);
 	if(config->pulseFd < 0)
 	{
+		_LOG("Create pulse udp socket failed.");
 		ssman_deinit(obj);
 		return SS_ERR;
 	}
@@ -294,6 +297,7 @@ int ssman_init(ssman_obj* obj)
 	obj->event = (ssman_event*)malloc(sizeof(ssman_event));
 	if(obj->event == NULL)
 	{
+		_LOG("Malloc ssman_event failed.");
 		ssman_deinit(obj);
 		return SS_ERR;
 	}
@@ -306,6 +310,7 @@ int ssman_init(ssman_obj* obj)
 	event->ioObj = (ssman_ioEvent*)malloc(sizeof(ssman_ioEvent)*event->ioObjNum);
 	if(event->ioObj == NULL)
 	{
+		_LOG("Malloc io event failed.");
 		ssman_deinit(obj);
 		return SS_ERR;
 	}
@@ -315,6 +320,7 @@ int ssman_init(ssman_obj* obj)
 	event->toObj = (ssman_toEvent*)malloc(sizeof(ssman_toEvent)*event->toObjNum);
 	if(event->toObj == NULL)
 	{
+		_LOG("Malloc to event failed.");
 		ssman_deinit(obj);
 		return SS_ERR;
 	}
@@ -325,6 +331,7 @@ int ssman_init(ssman_obj* obj)
 	ssEvent->fd = createUnixSocket(SS_UNIX_PATH);
 	if(ssEvent->fd < 0)
 	{
+		_LOG("Create unix socket failed.");
 		ssman_deinit(obj);
 		return SS_ERR;
 	}
@@ -332,6 +339,7 @@ int ssman_init(ssman_obj* obj)
 	ssEvent->watcher = (ev_io*)malloc(sizeof(ev_io));
 	if(ssEvent->watcher == NULL)
 	{
+		_LOG("Malloc ev_io failed.");
 		ssman_deinit(obj);
 		return SS_ERR;
 	}
@@ -345,6 +353,7 @@ int ssman_init(ssman_obj* obj)
 	webEvent->fd = createUdpSocket(SS_DEFAULT_PORT);
 	if(webEvent->fd < 0)
 	{
+		_LOG("Create udp socket failed.");
 		ssman_deinit(obj);
 		return SS_ERR;
 	}
@@ -352,6 +361,7 @@ int ssman_init(ssman_obj* obj)
 	webEvent->watcher = (ev_io*)malloc(sizeof(ev_io));
 	if(webEvent->watcher == NULL)
 	{
+		_LOG("Malloc ev_io failed.");
 		ssman_deinit(obj);
 		return SS_ERR;
 	}
@@ -365,6 +375,7 @@ int ssman_init(ssman_obj* obj)
 	pulseEvent->watcher = (ev_timer*)malloc(sizeof(ev_timer));
 	if(pulseEvent->watcher == NULL)
 	{
+		_LOG("Malloc ev_timer failed.");
 		ssman_deinit(obj);
 		return SS_ERR;
 	}
@@ -569,6 +580,7 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 	//operate cmd
 	if(strcmp(cmd,"add")==0)
 	{
+		_LOG("cmd: add");
 		//check neccesary option in detail
 		if(strlen(detail.password) == 0 || detail.server_port == 0)
 		{
@@ -605,6 +617,7 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 	}
 	else if(strcmp(cmd,"remove")==0)
 	{
+		_LOG("cmd: remove");
 		//check neccesary option in detail
 		if(detail.server_port == 0)
 		{
@@ -641,6 +654,7 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 	}
 	else if(strcmp(cmd,"get") == 0)
 	{
+		_LOG("cmd: get");
 		//check neccesary option indetail
 		if(detail.server_port == 0)
 			return SS_ERR;
@@ -653,12 +667,14 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 	}
 	else if(strcmp(cmd,"status") == 0)
 	{
+		_LOG("cmd: status");
 		//no need any ohter detail
 		int num = countPort(&obj->portTable);
 		snprintf(result,SS_RESULT_SIZE,"the port num is %d.",num);
 	}
 	else if(strcmp(cmd,"stop") == 0)
 	{
+		_LOG("cmd: stop");
 		//stop event loop
 		ev_break(obj->event->loop, EVBREAK_ALL);
 	}
