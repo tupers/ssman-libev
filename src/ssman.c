@@ -12,9 +12,13 @@ static void _LOG(char* msg)
 	{
 		time_t timeStamp;
 		time(&timeStamp);
-		fprintf(g_logFd,"[%s]\t%s\n",ctime(&timeStamp),msg);
+		char* timestr = ctime(&timeStamp);
+		fprintf(g_logFd,"[");
+		fwrite(timestr,1,strlen(timestr)-1,g_logFd);
+		fprintf(g_logFd,"]\t%s\n",msg);
 		fflush(g_logFd);
 	}
+	else printf("%s\n",msg);
 }
 //socket create function;
 static int createUnixSocket(const char* path)
@@ -254,6 +258,18 @@ ssman_config* ssman_loadConfig(char* cfgPath)
 			strncpy(cfg->method,value->u.string.ptr,SS_CFG_OPT_SIZE);
 			cfg->method[SS_CFG_OPT_SIZE-1]='\0';
 		}
+		else if(strcmp(name,"pulse_address")==0)
+		{
+			strncpy(cfg->pulse_address,value->u.string.ptr,SS_CFG_OPT_SIZE);
+			cfg->pulse_address[SS_CFG_OPT_SIZE]='\0';
+		}
+		else if(strcmp(name,"pulse_localPort")==0)
+			cfg->pulse_localPort = value->u.integer;
+		else if(strcmp(name,"pulse_serverPort")==0)
+			cfg->pulse_serverPort = value->u.integer;
+		else if(strcmp(name,"web_port")==0)
+			cfg->web_port = value->u.integer;
+
 	}
 	json_value_free(json_obj);
 
@@ -270,6 +286,21 @@ ssman_config* ssman_loadConfig(char* cfgPath)
 		cfg->method[SS_CFG_OPT_SIZE-1]='\0';
 	}
 
+	if(cfg->pulse_address[0] == '\0')
+	{
+		strncpy(cfg->pulse_address,SS_PULSE_SERVERADDR,SS_CFG_OPT_SIZE);
+		cfg->pulse_address[SS_CFG_OPT_SIZE-1]='\0';
+	}
+
+	if(cfg->pulse_localPort == 0)
+		cfg->pulse_localPort = SS_PULSE_LOCALPORT;
+
+	if(cfg->pulse_serverPort == 0)
+		cfg->pulse_serverPort = SS_PULSE_SERVERPORT;
+
+	if(cfg->web_port == 0)
+		cfg->web_port = SS_DEFAULT_PORT;
+
 	return cfg;
 }
 
@@ -280,7 +311,7 @@ int ssman_init(ssman_obj* obj)
 
 	//init config
 	ssman_config* config = obj->config;
-	config->pulseFd = createUdpSocket(SS_PULSE_LOCALPORT);
+	config->pulseFd = createUdpSocket(config->pulse_localPort);
 	if(config->pulseFd < 0)
 	{
 		_LOG("Create pulse udp socket failed.");
@@ -288,8 +319,8 @@ int ssman_init(ssman_obj* obj)
 		return SS_ERR;
 	}
 	config->remoteAddr.sin_family = AF_INET;
-	config->remoteAddr.sin_port = htons(SS_PULSE_SERVERPORT);
-	config->remoteAddr.sin_addr.s_addr = inet_addr(SS_PULSE_SERVERADDR);
+	config->remoteAddr.sin_port = htons(config->pulse_serverPort);
+	config->remoteAddr.sin_addr.s_addr = inet_addr(config->pulse_address);
 	//-----------------create hashtabel--------------------------
 	//...
 
@@ -328,7 +359,7 @@ int ssman_init(ssman_obj* obj)
 
 	//ss event with unix socket
 	ssman_ioEvent* ssEvent = &(event->ioObj[0]);
-	ssEvent->fd = createUnixSocket(SS_UNIX_PATH);
+	ssEvent->fd = createUnixSocket(config->manager_address);
 	if(ssEvent->fd < 0)
 	{
 		_LOG("Create unix socket failed.");
@@ -350,7 +381,7 @@ int ssman_init(ssman_obj* obj)
 
 	//web event with udp socket
 	ssman_ioEvent* webEvent = &(event->ioObj[1]);
-	webEvent->fd = createUdpSocket(SS_DEFAULT_PORT);
+	webEvent->fd = createUdpSocket(config->web_port);
 	if(webEvent->fd < 0)
 	{
 		_LOG("Create udp socket failed.");
@@ -677,6 +708,7 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 		_LOG("cmd: stop");
 		//stop event loop
 		ev_break(obj->event->loop, EVBREAK_ALL);
+		strncpy(result,SS_ACK_OK,sizeof(SS_ACK_OK));
 	}
 
 	return SS_OK;

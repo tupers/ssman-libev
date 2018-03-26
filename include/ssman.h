@@ -56,6 +56,10 @@ typedef struct{
 typedef struct{
 	char manager_address[SS_CFG_OPT_SIZE];
 	char method[SS_CFG_OPT_SIZE];
+	char pulse_address[SS_CFG_OPT_SIZE];
+	int web_port;
+	int pulse_localPort;
+	int pulse_serverPort;
 	int pulseFd;//periodic sending data to remote database
 	struct sockaddr_in remoteAddr;//target address structure that 'pulseFd' send to
 }ssman_config;
