@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.2)
 
-PROJECT(ss-manager)
+PROJECT(ssman)
 
 INCLUDE_DIRECTORIES(
 	include
@@ -19,4 +19,4 @@ ADD_EXECUTABLE(${PROJECT_NAME} ${MAIN_SRC})
 #	message(STATUS "optional:-std=c++11")
 #endif(CMAKE_COMPILER_IS_GNUCXX)
 
-target_link_libraries(ss-manager -lev -lm)
+target_link_libraries(ssman -lev -lm)
