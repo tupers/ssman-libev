@@ -1,69 +1,4 @@
 #include "ssman.h"
-//log fd
-static FILE* g_logFd = NULL;
-#define _LOG_CLOSE					\
-	do{						\
-		if(g_logFd){fclose(g_logFd);}}		\
-	while(0)
-
-static void _LOG(char* msg)
-{
-	if(g_logFd)
-	{
-		time_t timeStamp;
-		time(&timeStamp);
-		char* timestr = ctime(&timeStamp);
-		fprintf(g_logFd,"[");
-		fwrite(timestr,1,strlen(timestr)-1,g_logFd);
-		fprintf(g_logFd,"]\t%s\n",msg);
-		fflush(g_logFd);
-	}
-	else printf("%s\n",msg);
-}
-//socket create function;
-static int createUnixSocket(const char* path)
-{
-	unlink(path);
-	
-	int fd = socket(AF_UNIX, SOCK_DGRAM, 0);
-	if(fd<0)
-		return SS_ERR;
-	
-	struct sockaddr_un addr;
-	memset(&addr,0,sizeof(addr));
-	addr.sun_family = AF_UNIX;
-	strcpy(addr.sun_path, path);
-
-	int len = offsetof(struct sockaddr_un, sun_path) + strlen(path);
-	if(bind(fd,(struct sockaddr*)&addr, len)<0)
-	{
-		close(fd);
-		return SS_ERR;
-	}
-
-	return fd;
-}
-
-static int createUdpSocket(int port)
-{
-	int fd = socket(AF_INET, SOCK_DGRAM, 0);
-	if(fd<0)
-		return SS_ERR;
-
-	struct sockaddr_in addr;
-	memset(&addr,0,sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(port);
-	addr.sin_addr.s_addr = INADDR_ANY;
-	
-	if(bind(fd,(struct sockaddr*)&addr, sizeof(addr))<0)
-	{
-		close(fd);
-		return SS_ERR;
-	}
-
-	return fd;
-}
 
 //ssman evio cb
 static void ss_cb(EV_P_ ev_io* watcher, int revents)
@@ -261,7 +196,7 @@ ssman_config* ssman_loadConfig(char* cfgPath)
 		else if(strcmp(name,"pulse_address")==0)
 		{
 			strncpy(cfg->pulse_address,value->u.string.ptr,SS_CFG_OPT_SIZE);
-			cfg->pulse_address[SS_CFG_OPT_SIZE]='\0';
+			cfg->pulse_address[SS_CFG_OPT_SIZE-1]='\0';
 		}
 		else if(strcmp(name,"pulse_localPort")==0)
 			cfg->pulse_localPort = value->u.integer;

@@ -1,17 +1,7 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/un.h>
-#include <unistd.h>
-#include <stddef.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <time.h>
-#include <ev.h>
 #include "sstype.h"
 #include "json.h"
 #include "sshash.h"
+#include "utils.h"
 
 //event config
 #define SS_IOEVENT_NUM 	2	//0:unix ss event; 1:udp web event;
@@ -30,28 +20,6 @@
 #define SS_RESULT_SIZE	SS_RECVBUF_SIZE
 #define SS_CFG_OPT_SIZE	SS_CFG_SIZE/16
 
-typedef void(*IO_CB)(EV_P_ ev_io* watcher, int revents);
-typedef void(*TO_CB)(EV_P_ ev_timer* watcher, int revents);
-
-//ssman struct
-typedef struct{
-	int fd;
-	ev_io* watcher;
-	IO_CB cb;
-}ssman_ioEvent;
-
-typedef struct{
-	ev_timer* watcher;
-	TO_CB cb;
-}ssman_toEvent;
-
-typedef struct{
-	struct ev_loop* loop;
-	int ioObjNum;
-	int toObjNum;
-	ssman_ioEvent* ioObj;
-	ssman_toEvent* toObj;
-}ssman_event;
 
 typedef struct{
 	char manager_address[SS_CFG_OPT_SIZE];
