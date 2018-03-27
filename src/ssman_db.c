@@ -111,7 +111,12 @@ int ssman_db_init(ssman_db_obj* obj)
 		ssman_db_deinit(obj);
 		return SS_ERR;
 	}
+	
+	sqlite3_exec(obj->db,SQL_CREATE_IPLIST,NULL,NULL,NULL);
+	sqlite3_exec(obj->db,SQL_CREATE_PORTLIST,NULL,NULL,NULL);
 
-		
+	sqlite3_close(obj->db);
+
+	return SS_OK;
 }
 

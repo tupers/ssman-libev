@@ -6,6 +6,7 @@ typedef ssman_event ssman_db_event;
 
 #define SQL_CREATE_IPLIST 	"create table if not exists ipList(ip text primary key, group int default 0)"
 #define SQL_CREATE_PORTLIST	"create table if not exists portList(port int, group int default 0, dataUsage int default 0, dataLimit int default -1, strategy int default 0, used int default 0)"
+#define SQL_LIST_TABLE		"select name from sqlite_master where type = 'table' order by name"
 
 typedef struct
 {
