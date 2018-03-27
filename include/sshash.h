@@ -1,3 +1,6 @@
+#ifndef _SSHASH_H
+#define _SSHASH_H value
+
 #include <uthash.h>
 #include "sstype.h" 
 
@@ -18,3 +21,4 @@ void cleanPort(sshash_table** table);
 int countPort(sshash_table** table);
 int updatePort(int port, sshash_ctx ctx, sshash_table** table);
 void listPort(sshash_table** table, sshash_table** list, int* listNum);
+#endif /* ifndef _SSHASH_H */

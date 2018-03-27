@@ -1,7 +1,17 @@
+#ifndef _SSTYPE_H
+#define _SSTYPE_H 
+
 #include <ev.h>
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <stddef.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 //err code
 #define SS_OK 	0
@@ -38,3 +48,4 @@ typedef struct{
 	ssman_ioEvent* ioObj;
 	ssman_toEvent* toObj;
 }ssman_event;
+#endif /* ifndef _SSTYPE_H */

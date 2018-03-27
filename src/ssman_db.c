@@ -25,6 +25,14 @@ static void web_cb(EV_P_ ev_io* watcher, int revents)
 	
 }
 
+//sql cb
+static int sql_checkTable_cb(void* arg, int num, char** ctx, char** colname)
+{
+	int i;
+	for(i=0;i<num;i++)
+		printf("%s:\t%s\n",colname[i],ctx[i]);
+}
+
 int ssman_db_init(ssman_db_obj* obj)
 {
 	if(obj == NULL)
@@ -114,9 +122,15 @@ int ssman_db_init(ssman_db_obj* obj)
 	
 	sqlite3_exec(obj->db,SQL_CREATE_IPLIST,NULL,NULL,NULL);
 	sqlite3_exec(obj->db,SQL_CREATE_PORTLIST,NULL,NULL,NULL);
-
+	sqlite3_exec(obj->db,SQL_LIST_TABLE,sql_checkTable_cb,NULL,NULL);
 	sqlite3_close(obj->db);
 
 	return SS_OK;
 }
 
+int main()
+{
+	ssman_db_obj obj;
+	ssman_db_init(&obj);
+	return 0;
+}

@@ -1,5 +1,7 @@
+#ifndef _SSMAN_DB_H
+#define _SSMAN_DB_H value
+
 #include <sqlite3.h>
-#include "sstype.h"
 #include "utils.h"
 
 typedef ssman_event ssman_db_event;
@@ -25,3 +27,4 @@ void ssman_db_deinit(ssman_db_obj* obj);
 void ssman_db_exec(ssman_db_obj* obj);
 
 
+#endif /* ifndef _SSMAN_DB_H */

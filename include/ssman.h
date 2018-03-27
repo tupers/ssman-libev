@@ -1,4 +1,6 @@
-#include "sstype.h"
+#ifndef _SSMAN_H
+#define _SSMAN_H value
+
 #include "json.h"
 #include "sshash.h"
 #include "utils.h"
@@ -52,3 +54,4 @@ void ssman_exec(ssman_event*);
 int ssman_parseMsg_ss(char* msg, ssman_obj* obj);
 int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result);
 void ssman_deamonize(char* path);
+#endif /* ifndef _SSMAN_H */

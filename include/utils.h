@@ -1,3 +1,6 @@
+#ifndef _UTILS_H
+#define _UTILS_H value
+
 #include "sstype.h"
 
 #define TIME_FORMAT "%Y-%m-%d %H:%M:%S"
@@ -23,3 +26,5 @@ extern FILE* __g_logfile;
 
 int createUnixSocket(const char* path);
 int createUdpSocket(int port);
+
+#endif /* ifndef _UTILS_H */
