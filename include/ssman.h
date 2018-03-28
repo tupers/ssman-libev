@@ -1,7 +1,6 @@
 #ifndef _SSMAN_H
 #define _SSMAN_H value
 
-#include "json.h"
 #include "sshash.h"
 #include "utils.h"
 
@@ -13,14 +12,8 @@
 #define SS_PULSE_LOCALPORT	9001
 #define SS_PULSE_SERVERADDR	"127.0.0.1"
 #define SS_PULSE_SERVERPORT	9002
-#define SS_RECVBUF_SIZE 1024
 #define SS_UNIX_PATH 	"/tmp/evtest.sock"
 
-#define SS_CMD_SIZE	SS_RECVBUF_SIZE
-#define SS_PIDFILE_SIZE	SS_CMD_SIZE/8
-#define SS_CFG_SIZE	SS_CMD_SIZE*2
-#define SS_RESULT_SIZE	SS_RECVBUF_SIZE
-#define SS_CFG_OPT_SIZE	SS_CFG_SIZE/16
 
 
 typedef struct{
@@ -53,5 +46,4 @@ void ssman_deinit(ssman_obj*);
 void ssman_exec(ssman_event*);
 int ssman_parseMsg_ss(char* msg, ssman_obj* obj);
 int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result);
-void ssman_deamonize(char* path);
 #endif /* ifndef _SSMAN_H */

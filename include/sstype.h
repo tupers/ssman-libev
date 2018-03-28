@@ -21,10 +21,18 @@
 #define SS_ACK_OK 	"ok"
 #define SS_ACK_ERR 	"err"
 
+//size
+#define SS_RECVBUF_SIZE 1024
+#define SS_CMD_SIZE	SS_RECVBUF_SIZE
+#define SS_PIDFILE_SIZE	SS_CMD_SIZE/8
+#define SS_CFG_SIZE	SS_CMD_SIZE*2
+#define SS_RESULT_SIZE	SS_RECVBUF_SIZE
+#define SS_CFG_OPT_SIZE	SS_CFG_SIZE/16
+
 //default setting
 #define SS_DB_IOEVENT_NUM	2
-#define SS_DB_SSMAN_UDP_PORT	9005
-#define SS_DB_WEB_UDP_PORT	9006
+#define SS_DB_SSMAN_UDP_PORT	9002
+#define SS_DB_WEB_UDP_PORT	9003
 
 typedef void(*IO_CB)(EV_P_ ev_io* watcher, int revents);
 typedef void(*TO_CB)(EV_P_ ev_timer* watcher, int revents);

@@ -2,6 +2,7 @@
 #define _UTILS_H value
 
 #include "sstype.h"
+#include "json.h"
 
 #define TIME_FORMAT "%Y-%m-%d %H:%M:%S"
 
@@ -26,5 +27,8 @@ extern FILE* __g_logfile;
 
 int createUnixSocket(const char* path);
 int createUdpSocket(int port);
+void daemonize(char* path);
+json_value* openJsonConfig(char* cfgPath);
+void closeJsonConfig(json_value* obj);
 
 #endif /* ifndef _UTILS_H */

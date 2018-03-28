@@ -109,69 +109,22 @@ static char* createCmdString(ssman_cmd_detail* detail)
 	return cmd;
 }
 
-static void help()
-{
-	printf("\n");
-	printf("\t----Help Information----\n");
-	printf("\t-c\tconfig file path.\n");
-	printf("\t[-f]\trun application in the background and pid file path .\n");
-	printf("\t[-l]\tlog file path.\n");
-	printf("\t[-h]\thelp information.\n");
-}
 
 ssman_config* ssman_loadConfig(char* cfgPath)
 {
 	if(cfgPath == NULL)
 		return NULL;
-
-	//open cfg file
-	FILE* cfgFd = fopen(cfgPath,"r");
-	if(cfgFd == NULL)
-		return NULL;
-
-	char* cfgCtx = (char*)malloc(sizeof(char)*SS_CFG_SIZE);
-	if(cfgCtx == NULL)
-	{
-		fclose(cfgFd);
-		return NULL;
-	}
-
-	//check cfg file size
-	fseek(cfgFd,0,SEEK_END);
-	int len = ftell(cfgFd);
-	if(len > SS_CFG_SIZE)
-	{
-		free(cfgCtx);
-		fclose(cfgFd);
-		return NULL;
-	}
-
-	fseek(cfgFd,0,SEEK_SET);
-	fread(cfgCtx,1,SS_CFG_SIZE,cfgFd);
-	fclose(cfgFd);
 	
-	//parse cfg as json file
-	json_value *json_obj = json_parse(cfgCtx,len);
+	//get json obj
+	json_value* json_obj = openJsonConfig(cfgPath);
 	if(json_obj == NULL)
-	{
-		free(cfgCtx);
 		return NULL;
-	}
 
-	if(json_obj->type != json_object)
-	{
-		json_value_free(json_obj);
-		free(cfgCtx);
-		return NULL;
-	}
-	
-	free(cfgCtx);
-		
 	//malloc ssman config
 	ssman_config* cfg = (ssman_config*)malloc(sizeof(ssman_config));
 	if(cfg == NULL)
 	{
-		json_value_free(json_obj);
+		closeJsonConfig(json_obj);
 		return NULL;
 	}
 
@@ -206,7 +159,7 @@ ssman_config* ssman_loadConfig(char* cfgPath)
 			cfg->web_port = value->u.integer;
 
 	}
-	json_value_free(json_obj);
+	closeJsonConfig(json_obj);
 
 	//check ssman config if opt is NULL give it a default value
 	if(cfg->manager_address[0] == '\0')
@@ -649,143 +602,4 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 	return SS_OK;
 }
 
-void ssman_daemonize(char* path)
-{
-	/* Our process ID and Session ID */
-	pid_t pid, sid;
 
-	/* Fork off the parent process */
-	pid = fork();
-	if(pid<0)
-	{
-		printf("Fork failed.\n");
-		exit(EXIT_FAILURE);
-	}
-
-	/* If we got a good PID, then
-	 * we can exit the parent process. */
-	if(pid>0)
-	{
-		FILE* file = fopen(path, "w");
-		if(file == NULL)
-		{
-			perror("Invalid pid file path.");
-			exit(EXIT_FAILURE);
-		}
-
-
-		fprintf(file, "%d", (int)pid);
-		fclose(file);
-		exit(EXIT_SUCCESS);
-	}
-
-	/* Change the file mode mask */
-	umask(0);
-
-	//log
-	//FILE* fd = fopen("/tmp/sslog","w");
-	
-	/* Create a new SID for the child process */
-	sid = setsid();
-	if(sid<0)
-	{
-		_LOG("setsid error.");
-		_LOG_CLOSE;
-		exit(EXIT_FAILURE);
-	}
-
-	/* Change the current working directory */
-	if((chdir("/"))<0)
-	{
-		_LOG("change directory error.");
-		_LOG_CLOSE;
-		exit(EXIT_FAILURE);
-	}
-
-	/* Close out the standard file descriptors */
-	close(STDIN_FILENO);
-	close(STDOUT_FILENO);
-	close(STDERR_FILENO);
-}
-
-int main(int argc, char **argv)
-{
-	int c;
-	char* cfgPath 	= NULL;
-	char* pidPath	= NULL;
-	char* logPath 	= NULL;
-
-	opterr = 0;
-
-	while(( c = getopt(argc, argv, "c:f:hl:")) != -1)
-		switch(c){
-			case 'c':
-				cfgPath = optarg;
-				break;
-			case 'f':
-				pidPath = optarg;
-				break;
-			case 'h':
-				help();
-				exit(EXIT_SUCCESS);
-			case 'l':
-				logPath = optarg;
-				break;
-			case '?':
-				opterr = 1;
-				break;
-		}
-	
-	//check getopt error and cfgPath must be given.
-	if(opterr || cfgPath == NULL){
-		help();
-		exit(EXIT_FAILURE);
-	}
-				
-	//ssman_daemonize("/tmp/ssdaemon.pid");
-	ssman_obj obj;
-	memset(&obj,0,sizeof(ssman_obj));
-
-	//load config
-	ssman_config* cfg = ssman_loadConfig(cfgPath);
-	if(cfg == NULL)
-	{
-		printf("Failed to load config with path: \'%s\'\n",cfgPath);
-		exit(EXIT_FAILURE);
-	}
-	obj.config = cfg;
-
-	//start log
-	if(logPath)
-		g_logFd = fopen(logPath,"w");
-	
-	if(pidPath)
-	{
-		if(g_logFd)
-			printf("Start daemonize...,log will be logged in %s.\n",logPath);
-		else
-			printf("Start daemonize without log...\n");
-		ssman_daemonize(pidPath);
-	}
-
-	//ignore SIGPIPE
-	signal(SIGPIPE, SIG_IGN);
-	signal(SIGCHLD, SIG_IGN);
-	signal(SIGABRT, SIG_IGN);
-
-	_LOG("start init.");
-	if(ssman_init(&obj)!=SS_OK)
-	{
-		_LOG("init failed.");
-		_LOG_CLOSE;
-		ssman_deinit(&obj);
-		exit(EXIT_FAILURE);
-	}
-
-	ssman_exec(obj.event);
-	_LOG("main loop finished.");
-	ssman_deinit(&obj);
-	_LOG_CLOSE;	
-
-	exit(EXIT_SUCCESS);
-}
