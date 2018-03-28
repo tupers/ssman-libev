@@ -47,7 +47,6 @@ static int sql_checkTable_cb(void* arg, int num, char** ctx, char** colname)
 		check[0]=1;
 	else if(strcmp(ctx[0],"portList")==0)
 		check[1]=1;
-
 	return 0;
 }
 
@@ -63,6 +62,45 @@ static int isTableExisted(sqlite3* db)
 	return SS_OK;
 }
 
+static int sql_count_cb(void* arg, int num, char** ctx, char** colname)
+{
+	int* count = arg;
+	*count = atoi(ctx[0]);
+
+	return 0;
+}
+
+static int isIpExisted(sqlite3* db,char* ip)
+{
+	int check = 0;
+	char cmd[SS_CFG_OPT_SIZE];
+	snprintf(cmd,SS_CFG_OPT_SIZE,"select count(*) from ipList where ip = \'%s\';",ip);
+	sqlite3_exec(db,cmd,sql_count_cb,&check,NULL);
+	if(check)
+		return SS_OK;
+	else
+		return SS_ERR;
+}
+
+static int sql_incrementCount_cb(void* arg, int num, char** ctx, char** colname)
+{
+	int* delete_num = arg;
+	*delete_num += 1;
+
+	return 0;
+}
+
+static int isPortExisted(sqlite3* db,int port,int group)
+{
+	int check = 0;
+	char cmd[SS_CFG_OPT_SIZE];
+	snprintf(cmd,SS_CFG_OPT_SIZE,"select count(*) from portList where port = %d and ip_group = %d;",port,group);
+	sqlite3_exec(db,cmd,sql_count_cb,&check,NULL);
+	if(check)
+		return SS_OK;
+	else
+		return SS_ERR;
+}
 
 int ssman_db_init(ssman_db_obj* obj)
 {
@@ -150,9 +188,6 @@ int ssman_db_init(ssman_db_obj* obj)
 		ssman_db_deinit(obj);
 		return SS_ERR;
 	}
-
-	sqlite3_exec(obj->db,SQL_CREATE_IPLIST,NULL,NULL,NULL);
-	sqlite3_exec(obj->db,SQL_CREATE_PORTLIST,NULL,NULL,NULL);
 	
 	//check table in db is properly created
 	if(isTableExisted(obj->db) == SS_ERR)
@@ -186,52 +221,67 @@ void ssman_db_exec(ssman_db_obj* obj)
 	ev_run(obj->event->loop,0);
 }
 
-int ssman_db_importIP(char* ipList, char* dbPath)
+int ssman_db_updateDb(char* ipList, char* configPath, char* dbPath)
 {
-	//open json ip list
-	json_value* json_obj = openJsonConfig(ipList);
-	if(json_obj == NULL)
-		return SS_ERR;
+	//open file and parse them as json file
+	json_value* ip_json = openJsonConfig(ipList);
+	json_value* cfg_json = openJsonConfig(configPath);
 
-	sqlite3* db;
-
-	//open db
-	if(sqlite3_open(dbPath,&db) != SQLITE_OK)
+	if(ip_json == NULL || cfg_json == NULL)
 	{
-		_LOG("Import IP: open database failed.");
-		closeJsonConfig(json_obj);
-		return SS_ERR;
-	}
-
-	//check db
-	if(isTableExisted(db) == SS_ERR)
-	{
-		_LOG("Import IP: wrong database.");
-		sqlite3_close(db);
-		closeJsonConfig(json_obj);
+		_LOG("Can not open ip list or config file.");
+		if(ip_json)closeJsonConfig(ip_json);
+		if(cfg_json)closeJsonConfig(cfg_json);
 		return SS_ERR;
 	}
 	
-	//clean ip table
-	sqlite3_exec(db,"delete from ipList",NULL,NULL,NULL);	
-
-	//insert
-	int i;
-	for(i=0;i<json_obj->u.object.length;i++)
+	//open db or create it
+	sqlite3* db;
+	if(sqlite3_open(dbPath,&db) != SQLITE_OK)
 	{
-		char* name = json_obj->u.object.values[i].name;
-		json_value* value = json_obj->u.object.values[i].value;
-		if(strcmp(name,"item")==0 && value->type == json_object)
+		_LOG("Can not open database");
+		closeJsonConfig(ip_json);
+		closeJsonConfig(cfg_json);
+		return SS_ERR;
+	}
+	
+	sqlite3_exec(db,SQL_CREATE_IPLIST,NULL,NULL,NULL);
+	sqlite3_exec(db,SQL_CREATE_PORTLIST,NULL,NULL,NULL);
+	
+	//check table in db is properly created
+	if(isTableExisted(db) == SS_ERR)
+	{
+		_LOG("Ip list or port list are not in the database");
+		closeJsonConfig(ip_json);
+		closeJsonConfig(cfg_json);
+		sqlite3_close(db);
+		return SS_ERR;
+	}
+
+	//1. first check ip list
+	int i;
+	int update_num = 0;
+	int delete_num = 0;
+	int insert_num = 0;
+	char cmd[SS_CFG_OPT_SIZE];
+	sqlite3_exec(db,"update ipList set flag = 0;",NULL,NULL,NULL);
+
+	for(i=0;i<ip_json->u.object.length;i++)
+	{
+		char* name = ip_json->u.object.values[i].name;
+		json_value* item = ip_json->u.object.values[i].value;
+		if(strcmp(name,"item")==0 && item->type == json_object)
 		{
+			//get ip and group from json file
 			char ip[SS_CFG_OPT_SIZE];
 			int group=-1;
 			memset(ip,0,SS_CFG_OPT_SIZE);
 
 			int j;
-			for(j=0;j<value->u.object.length;j++)
+			for(j=0;j<item->u.object.length;j++)
 			{
-				char* item_name = value->u.object.values[j].name;
-				json_value* item_value = value->u.object.values[j].value;
+				char* item_name = item->u.object.values[j].name;
+				json_value* item_value = item->u.object.values[j].value;
 				
 				if(strcmp(item_name,"ip") == 0)
 				{
@@ -241,18 +291,114 @@ int ssman_db_importIP(char* ipList, char* dbPath)
 				else if(strcmp(item_name,"group") == 0)
 					group = item_value->u.integer;
 			}
-
+			//compare them with ip list
 			if(group != -1 && ip[0]!='\0')
 			{
-				char cmd[SS_CFG_OPT_SIZE];
-				snprintf(cmd,SS_CFG_OPT_SIZE,"insert into ipList values ( \"%s\", %d );",ip,group);
-				sqlite3_exec(db,cmd,NULL,NULL,NULL);
+
+				//first check
+				if(isIpExisted(db,ip) == SS_ERR)
+				{
+					//not existed
+					insert_num++;
+					snprintf(cmd,SS_CFG_OPT_SIZE,"insert into ipList (ip,ip_group,flag) values (\'%s\',%d,%d);",ip,group,1);
+					sqlite3_exec(db,cmd,NULL,NULL,NULL);
+				}
+				else
+				{
+					//if existed
+					update_num++;
+					snprintf(cmd,SS_CFG_OPT_SIZE,"update ipList set flag = 1 where ip = \'%s\';",ip);
+					sqlite3_exec(db,cmd,NULL,NULL,NULL);
+				}
+
 			}
 		}
+	}
+	
+	//delete item not used
+	snprintf(cmd,SS_CFG_OPT_SIZE,"delete from ipList where flag = 0;");
+	sqlite3_exec(db,cmd,sql_incrementCount_cb,&delete_num,NULL);
 
+	//iplist update report
+	snprintf(cmd,SS_CFG_OPT_SIZE,"update ipList finished, update:%d, insert:%d, delete:%d.",update_num,insert_num,delete_num);
+	_LOG(cmd);
+
+	closeJsonConfig(ip_json);
+
+	//2.then check port list
+	sqlite3_exec(db,"update portList set flag = 0;",NULL,NULL,NULL);
+	for(i=0;i<cfg_json->u.object.length;i++)
+	{
+		char* name = cfg_json->u.object.values[i].name;
+		json_value* group = cfg_json->u.object.values[i].value;
+		if(strcmp(name,"group") == 0 && group->type == json_object)
+		{
+			//get id start size from json file
+			int id = -1;
+			int start = -1;
+			int size = 0;
+			int j;
+			for(j=0;j<group->u.object.length;j++)
+			{
+				char* group_name = group->u.object.values[j].name;
+				json_value* group_value = group->u.object.values[j].value;
+
+				if(strcmp(group_name,"id") == 0)
+					id = group_value->u.integer;
+				if(strcmp(group_name,"start") == 0)
+					start = group_value->u.integer;
+				if(strcmp(group_name,"size") == 0)
+					size = group_value->u.integer;
+			}
+			//compare them with port list
+			if(id != -1 && start != -1 && size != 0)
+			{
+				update_num = 0;
+				insert_num = 0;
+				delete_num = 0;
+				
+				//delete port out of range
+				snprintf(cmd,SS_CFG_OPT_SIZE,"delete from ipList where ip_group = %d and (port < %d or port >= %d);",id,start,start+size);
+				sqlite3_exec(db,cmd,sql_incrementCount_cb,&delete_num,NULL);
+
+				//check port in range
+				int k;
+				for(k=start;k<start+size;k++)
+				{
+					if(isPortExisted(db,k,id) == SS_ERR)
+					{
+						//not existed
+						insert_num++;
+						snprintf(cmd,SS_CFG_OPT_SIZE,"insert into portList (port,ip_group,flag) values (%d,%d,%d);",k,id,1);
+						sqlite3_exec(db,cmd,NULL,NULL,NULL);
+					}
+					else
+					{
+						update_num++;
+						snprintf(cmd,SS_CFG_OPT_SIZE,"update portList set flag = 1 where port = %d and ip_group = %d;",k,id);
+						sqlite3_exec(db,cmd,NULL,NULL,NULL);
+					}
+				}
+
+				//portList update report
+				snprintf(cmd,SS_CFG_OPT_SIZE,"update portList in group:%d finished, update:%d, insert:%d, delete:%d.",id,update_num,insert_num,delete_num);
+				_LOG(cmd);
+			}
+		}
 	}
 
-	closeJsonConfig(json_obj);
+	//delete port in group which not existed
+	delete_num = 0;
+	snprintf(cmd,SS_CFG_OPT_SIZE,"delete from portList where flag = 0;");
+	sqlite3_exec(db,cmd,sql_incrementCount_cb,&delete_num,NULL);
+
+	//portList update report
+	snprintf(cmd,SS_CFG_OPT_SIZE,"update portList finished, delete:%d in group which not existed.",delete_num);
+	_LOG(cmd);
+
+	closeJsonConfig(cfg_json);
+
+	//finish	
 	sqlite3_close(db);
 
 	return SS_OK;

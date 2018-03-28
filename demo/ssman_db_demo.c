@@ -2,7 +2,7 @@
 
 int main()
 {
-	int ret = ssman_db_importIP("/home/tupers/ssman-libev/ip.json","/tmp/test.db");	
+	int ret = ssman_db_updateDb("/home/tupers/ssman-libev/ip.json","/home/tupers/ssman-libev/ssman_db_group.json","/tmp/test.db");	
 
 	ssman_db_obj obj;
 	memset(&obj,0,sizeof(ssman_db_obj));
@@ -10,5 +10,6 @@ int main()
 	obj.config->dbPath = "/tmp/test.db";
 	ssman_db_init(&obj);
 	ssman_db_exec(&obj);
+	ssman_db_deinit(&obj);
 	return 0;
 }
