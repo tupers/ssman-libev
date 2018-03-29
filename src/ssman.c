@@ -52,7 +52,7 @@ static void web_cb(EV_P_ ev_io* watcher, int revents)
 	//parse data drop wrong data
 	//operate remote cmd
 	char result[SS_RESULT_SIZE];
-
+	
 	int ret = ssman_parseMsg_web(buffer,(ssman_obj*)watcher->data,result);
 	if(ret == SS_ERR)
 		_LOG("web cb parse msg error.");
@@ -445,7 +445,7 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 	//msg from web is a json file as show below
 	//{
 	//	"cmd"="xxx";
-	//	"port"=1234;
+	//	"server_port"=1234;
 	//	"password"="xxx";
 	//}
 	
@@ -469,9 +469,9 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 
 	//init value for json
 	ssman_cmd_detail detail;
-	char cmd[16];
+	char cmd[SS_CFG_OPT_SIZE_SMALL];
 	memset(&detail,0,sizeof(ssman_cmd_detail));
-	memset(cmd,0,16);
+	memset(cmd,0,SS_CFG_OPT_SIZE_SMALL);
 	detail.config = obj->config;
 
 	unsigned int i;
@@ -479,23 +479,25 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 	{
 		char* name = json_obj->u.object.values[i].name;
 		json_value* value = json_obj->u.object.values[i].value;
+		
 		if(strcmp(name,"cmd")==0)
 		{
-			strncpy(cmd,value->u.string.ptr,16);
-			cmd[15]='\0';
+			strncpy(cmd,value->u.string.ptr,SS_CFG_OPT_SIZE_SMALL);
+			cmd[SS_CFG_OPT_SIZE_SMALL-1]='\0';
 		}
 		else if(strcmp(name,"server_port")==0)
 			detail.server_port = value->u.integer;
 		else if(strcmp(name,"password")==0)
 		{
-			strncpy(detail.password,value->u.string.ptr,32);
-			detail.password[31]='\0';
+			strncpy(detail.password,value->u.string.ptr,SS_CFG_OPT_SIZE_SMALL);
+			detail.password[SS_CFG_OPT_SIZE_SMALL-1]='\0';
 		}
 	}
 
 	json_value_free(json_obj);
 
 	char* systemCmd = NULL;
+
 	//operate cmd
 	if(strcmp(cmd,"add")==0)
 	{
@@ -526,7 +528,6 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 			//err log
 			return SS_ERR;
 		}
-
 		//if system succeed, add this port into hash table
 		sshash_ctx ctx;
 		memset(&ctx,0,sizeof(sshash_ctx));

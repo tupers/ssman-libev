@@ -8,6 +8,8 @@ int main()
 	memset(&obj,0,sizeof(ssman_db_obj));
 	obj.config = (ssman_db_config*)malloc(sizeof(ssman_db_config));
 	obj.config->dbPath = "/tmp/test.db";
+	obj.config->sendcmd_localPort = 9004;
+	obj.config->sendcmd_serverPort = 9000;
 	ssman_db_init(&obj);
 	ssman_db_start(&obj);
 	ssman_db_exec(&obj);

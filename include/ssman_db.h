@@ -12,9 +12,26 @@ typedef ssman_event ssman_db_event;
 
 typedef struct
 {
+	char* dbPath;
+	int sendcmd_localPort;
+	int sendcmd_serverPort;
+	int sendcmd_fd;
+	struct sockaddr_in ssmanAddr;
+}ssman_db_config;
+
+typedef struct
+{
+	ssman_db_event* event;
+	ssman_db_config* config;
+	sqlite3* db;
+}ssman_db_obj;
+
+typedef struct
+{
 	char passwd[SS_CFG_OPT_SIZE_SMALL];
 	int port;
 	int group;
+	int used;
 }_server_info;
 
 typedef struct
@@ -26,23 +43,11 @@ typedef struct
 typedef struct
 {
 	int fd;
-	int port;
-	int group;
 	int* plan_num;
 	int* success_num;
-}_server_sendtoSsman_cb_str;
-
-typedef struct
-{
-	char* dbPath;
-}ssman_db_config;
-
-typedef struct
-{
-	ssman_db_event* event;
-	ssman_db_config* config;
-	sqlite3* db;
-}ssman_db_obj;
+	_server_info* info;
+	struct sockaddr_in* addr;
+}_server_sendtossman_cb_str;
 
 int ssman_db_init(ssman_db_obj* obj);
 void ssman_db_deinit(ssman_db_obj* obj);

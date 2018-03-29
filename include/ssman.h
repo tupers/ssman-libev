@@ -8,10 +8,6 @@
 #define SS_IOEVENT_NUM 	2	//0:unix ss event; 1:udp web event;
 #define SS_TOEVENT_NUM 	1	//0:send datausage from hash tabel to remote db
 #define SS_TIMEOUT 	10
-#define SS_DEFAULT_PORT 9000
-#define SS_PULSE_LOCALPORT	9001
-#define SS_PULSE_SERVERADDR	"127.0.0.1"
-#define SS_PULSE_SERVERPORT	9002
 #define SS_UNIX_PATH 	"/tmp/evtest.sock"
 
 
@@ -30,7 +26,7 @@ typedef struct{
 typedef struct{
 	//char cmd[16];
 	int server_port;
-	char password[32];
+	char password[SS_CFG_OPT_SIZE_SMALL];
 	ssman_config* config;
 }ssman_cmd_detail;
 
