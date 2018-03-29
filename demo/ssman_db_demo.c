@@ -9,6 +9,7 @@ int main()
 	obj.config = (ssman_db_config*)malloc(sizeof(ssman_db_config));
 	obj.config->dbPath = "/tmp/test.db";
 	ssman_db_init(&obj);
+	ssman_db_start(&obj);
 	ssman_db_exec(&obj);
 	ssman_db_deinit(&obj);
 	return 0;

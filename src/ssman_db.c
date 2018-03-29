@@ -102,6 +102,25 @@ static int isPortExisted(sqlite3* db,int port,int group)
 		return SS_ERR;
 }
 
+static int sql_loadPortTable_cb(void* arg, int num, char** ctx, char** colname)
+{
+	_server_list* list = arg;
+	_server_info* info = &(list->list[list->i]);
+	info->port = atoi(ctx[0]);
+	strncpy(info->passwd,ctx[1],SS_CFG_OPT_SIZE_SMALL);
+	info->passwd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+	info->group = atoi(ctx[2]);
+	list->i += 1;
+	
+	return 0;
+}
+
+static int sql_sendToSsman_cb(void* arg, int num, char** ctx, char** colname)
+{
+	
+	return 0;
+}
+
 int ssman_db_init(ssman_db_obj* obj)
 {
 	if(obj == NULL)
@@ -400,6 +419,40 @@ int ssman_db_updateDb(char* ipList, char* configPath, char* dbPath)
 
 	//finish	
 	sqlite3_close(db);
+
+	return SS_OK;
+}
+
+int ssman_db_start(ssman_db_obj* obj)
+{
+	int i;
+	char cmd[SS_CFG_OPT_SIZE];
+	int num = 0;
+	int plan_num = 0;
+	int success_num = 0;
+	sqlite3_exec(obj->db,"select count(*) from portList;",sql_count_cb,&num,NULL);
+
+	_server_list port_list;
+	port_list.i = 0;
+	port_list.list = (_server_info*)malloc(sizeof(_server_info)*num);
+	if(port_list.list== NULL)
+	{
+		_LOG("Malloc port list failed.");
+		return SS_ERR;
+	}
+	
+	sqlite3_exec(obj->db,"select port,password,ip_group from portList;",sql_loadPortTable_cb,&port_list,NULL);
+
+	//ssman ipadrr struct
+	//..
+
+	for(i=0;i<num;i++)
+	{
+		
+		struct sockaddr_in ssmanAddr;
+
+	}
+
 
 	return SS_OK;
 }
