@@ -599,6 +599,8 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 		ev_break(obj->event->loop, EVBREAK_ALL);
 		strncpy(result,SS_ACK_OK,sizeof(SS_ACK_OK));
 	}
+	else
+		return SS_ERR;
 
 	return SS_OK;
 }
