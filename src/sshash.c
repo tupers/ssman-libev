@@ -7,7 +7,7 @@ sshash_table* findPort(int key, sshash_table** table)
 	return s;
 }
 
-int addPort(int port, sshash_ctx ctx, sshash_table** table)
+int addPort(int port, sshash_ctx* ctx, sshash_table** table)
 {
 	sshash_table* s = NULL;
 	
@@ -19,7 +19,7 @@ int addPort(int port, sshash_ctx ctx, sshash_table** table)
 		if(s==NULL)
 			return SS_ERR;
 		s->key = port;
-		s->ctx.dataUsage = ctx.dataUsage;
+		memcpy(&s->ctx,ctx,sizeof(sshash_ctx));
 		HASH_ADD_INT(*table,key,s);
 		return SS_OK;
 	}
@@ -55,21 +55,6 @@ void cleanPort(sshash_table** table)
 int countPort(sshash_table** table)
 {
 	return HASH_COUNT(*table);
-}
-
-int updatePort(int port, sshash_ctx ctx, sshash_table** table)
-{
-	sshash_table* tmp = NULL;
-	
-	//first, verify if it exists
-	tmp = findPort(port,table);
-	//then update
-	if(tmp)
-	{
-		memcpy(&tmp->ctx,&ctx,sizeof(sshash_ctx));
-		return SS_OK;
-	}else
-		return SS_ERR;
 }
 
 void listPort(sshash_table** table, sshash_table** list, int* listNum)

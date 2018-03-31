@@ -33,11 +33,13 @@
 //default setting
 #define SS_DB_IOEVENT_NUM	2
 #define SS_DB_WEB_UDP_PORT	9003
-#define SS_DEFAULT_PORT 	9000
+#define SS_WEB_UDP_PORT 	9000
 #define SS_PULSE_LOCALPORT	9001
 #define SS_PULSE_SERVERADDR	"127.0.0.1"
 #define SS_PULSE_SERVERPORT	9002
-#define SS_DB_SSMAN_UDP_PORT	SS_PULSE_SERVERPORT
+#define SS_DB_SSMAN_PULSEPORT	SS_PULSE_SERVERPORT
+#define SS_DB_SSMAN_LOCALPORT	9004
+#define SS_DB_SSMAN_SERVERPORT	SS_WEB_UDP_PORT
 
 typedef void(*IO_CB)(EV_P_ ev_io* watcher, int revents);
 typedef void(*TO_CB)(EV_P_ ev_timer* watcher, int revents);

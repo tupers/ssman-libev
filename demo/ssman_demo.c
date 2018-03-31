@@ -75,6 +75,12 @@ int main(int argc, char **argv)
 	signal(SIGCHLD, SIG_IGN);
 	signal(SIGABRT, SIG_IGN);
 
+	//add term signal cb
+	//..
+	
+	//clean up old process called by this application through pid file and remove old pid file, for this application may be closed without signal term last time;
+	//..
+	
 	_LOG("start init.");
 	if(ssman_init(&obj)!=SS_OK)
 	{
@@ -86,8 +92,15 @@ int main(int argc, char **argv)
 
 	ssman_exec(obj.event);
 	_LOG("main loop finished.");
+
+	//if finish gracefully, clean all process called by this application and remove the pid file
+	//..
+	//_LOG("closed all ss-server");
+	
+	_LOG("free all resource.");
 	ssman_deinit(&obj);
-	_LOG_CLOSE;	
+	_LOG("closed.");
+	_LOG_CLOSE;
 
 	exit(EXIT_SUCCESS);
 }

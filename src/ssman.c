@@ -85,6 +85,7 @@ static void sendtoDb_cb(EV_P_ ev_timer* watcher, int revents)
 		{
 			int len = strlen(msg);
 			snprintf(msg+len,SS_RESULT_SIZE-len,"\"%d\":%d,",list[i]->key,list[i]->ctx.dataUsage);
+			list[i]->ctx.dataUsage = 0;
 		}
 		free(list);
 
@@ -109,6 +110,23 @@ static char* createCmdString(ssman_cmd_detail* detail)
 	return cmd;
 }
 
+static int getPortPid(int port)
+{
+	char path[SS_PIDFILE_SIZE];
+	snprintf(path,SS_PIDFILE_SIZE,"/tmp/.shadowsocks_%d.pid",port);
+	FILE* pidFd = fopen(path,"r");
+	if(pidFd == NULL)
+		return 0;
+
+	int pid;
+	
+	int ret = fscanf(pidFd,"%d",&pid);
+	fclose(pidFd);
+	if(ret == EOF)
+		return 0;
+	else
+		return pid;
+}
 
 ssman_config* ssman_loadConfig(char* cfgPath)
 {
@@ -187,7 +205,7 @@ ssman_config* ssman_loadConfig(char* cfgPath)
 		cfg->pulse_serverPort = SS_PULSE_SERVERPORT;
 
 	if(cfg->web_port == 0)
-		cfg->web_port = SS_DEFAULT_PORT;
+		cfg->web_port = SS_WEB_UDP_PORT;
 
 	return cfg;
 }
@@ -424,15 +442,29 @@ int ssman_parseMsg_ss(char* msg, ssman_obj* obj)
 		return SS_ERR;
 	}
 	
-	//add it into hash table
-	sshash_ctx ctx;	
-	time_t timep;
+	//update it 
+	sshash_table* hash_obj = findPort(atoi(name),&obj->portTable);
+	if(hash_obj == NULL)
+	{
+		_LOG("port not found in hash table.");
+		json_value_free(json_obj);
+		return SS_ERR;
+	}
 
-	time(&timep);
-	ctx.dataUsage = value->u.integer;
+	
+	int dif = value->u.integer - hash_obj->ctx.lastUsage;
+	if(dif<0)
+	{
+		char msg[SS_CFG_OPT_SIZE];
+		snprintf(msg,SS_CFG_OPT_SIZE,"Error: ss-server with port %d doesn't work in normal condition.",atoi(name));
+		_LOG(msg);
+	}
+	else
+		hash_obj->ctx.dataUsage += dif;
+
+	hash_obj->ctx.lastUsage = value->u.integer;
 	json_value_free(json_obj);
-
-	return updatePort(atoi(name),ctx,&obj->portTable);
+	return SS_OK;
 }
 
 int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
@@ -531,7 +563,7 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 		//if system succeed, add this port into hash table
 		sshash_ctx ctx;
 		memset(&ctx,0,sizeof(sshash_ctx));
-		addPort(detail.server_port,ctx,&obj->portTable);
+		addPort(detail.server_port,&ctx,&obj->portTable);
 
 		strncpy(result,SS_ACK_OK,sizeof(SS_ACK_OK));
 	}
@@ -551,21 +583,11 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 			return SS_ERR;
 
 		//find specified ss-server pid file and kill server
-		char path[SS_PIDFILE_SIZE];
-		snprintf(path,SS_PIDFILE_SIZE,"/tmp/.shadowsocks_%d.pid",detail.server_port);
-		FILE* pidFd = fopen(path,"r");
-		if(pidFd == NULL)
-			return SS_ERR;
-
-		int pid;
-		if(fscanf(pidFd,"%d",&pid) != EOF)
+		int pid = getPortPid(detail.server_port);
+		if(pid)
 			kill(pid,SIGTERM);
 		else
-		{
-			fclose(pidFd);
 			return SS_ERR;
-		}
-		fclose(pidFd);
 
 		//remove it from hash table
 		deletePort(detail.server_port, &obj->portTable);
@@ -591,6 +613,43 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 		//no need any ohter detail
 		int num = countPort(&obj->portTable);
 		snprintf(result,SS_RESULT_SIZE,"the port num is %d.",num);
+	}
+	else if(strcmp(cmd,"ping") == 0)
+	{
+		_LOG("cmd: ping");
+
+		strncpy(result,SS_ACK_OK,sizeof(SS_ACK_OK));
+	}
+	else if(strcmp(cmd,"purge") == 0)
+	{
+		_LOG("cmd: purge");
+		//first list
+		int num;
+		listPort(&obj->portTable,NULL,&num);
+		if(num)
+		{
+			sshash_table** list = (sshash_table**)malloc(sizeof(sshash_table)*num);
+			if(list == NULL)
+				return SS_ERR;
+			listPort(&obj->portTable,list,NULL);
+			
+			//then remove them
+			int i;
+			for(i=0;i<num;i++)
+			{
+				int pid = getPortPid(list[i]->key);
+				if(pid)
+					kill(pid,SIGTERM);
+				else
+					continue;
+			}
+
+			free(list);
+			//clean hash table
+			cleanPort(&obj->portTable);
+		}
+		
+		strncpy(result,SS_ACK_OK,sizeof(SS_ACK_OK));
 	}
 	else if(strcmp(cmd,"stop") == 0)
 	{
