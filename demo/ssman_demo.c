@@ -5,7 +5,7 @@ static void help()
 	printf("\n");
 	printf("\t----Help Information----\n");
 	printf("\t-c\tconfig file path.\n");
-	printf("\t[-f]\trun application in the background and pid file path .\n");
+	printf("\t[-f]\trun application in the background with specified pid file path .\n");
 	printf("\t[-l]\tlog file path.\n");
 	printf("\t[-h]\thelp information.\n");
 }
@@ -44,7 +44,6 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 				
-	//ssman_daemonize("/tmp/ssdaemon.pid");
 	ssman_obj obj;
 	memset(&obj,0,sizeof(ssman_obj));
 

@@ -1,43 +1,26 @@
 #include "ssman_db.h"
 
-//ev_io cb
-static void ssman_cb(EV_P_ ev_io* watcher, int revents)
+static int send_cmd(void* data,int length, struct sockaddr_in* remoteAddr, int sock)
 {
-	if(EV_ERROR & revents)
-	{
-		_LOG("ssman cb error.");
-		return;
-	}
-
-	//recv data
-	char buffer[SS_RECVBUF_SIZE];
-	struct sockaddr_in remoteAddr;
-
-	socklen_t remoteAddr_len = sizeof(remoteAddr);
-	int len = recvfrom(watcher->fd, buffer,sizeof(buffer), 0, (struct sockaddr*)&remoteAddr, &remoteAddr_len);
-	if(len < 0)
-	{
-		_LOG("web cb recv error.");
-		return;
-	}
-	buffer[len]='\0';
+	//send
+	sendto(sock,data,length,0,(struct sockaddr*)remoteAddr,sizeof(struct sockaddr));
 	
-	_LOG(buffer);
+	//recv
+	char ack[SS_CFG_OPT_SIZE_SMALL];
+	strncpy(ack,SS_ACK_ERR,SS_CFG_OPT_SIZE_SMALL);
+	struct sockaddr_in ackAddr;
+	ackAddr.sin_family = AF_INET;
+	socklen_t len =sizeof(ackAddr);
+	int ret = recvfrom(sock,ack,SS_CFG_OPT_SIZE_SMALL,0,(struct sockaddr*)&ackAddr,&len);
+	if(ret>0)
+		ack[ret] = '\0';
 
+	if(strcmp(ack,SS_ACK_OK) == 0)
+		return SS_OK;
+	else
+		return SS_ERR;
 }
-
-static void web_cb(EV_P_ ev_io* watcher, int revents)
-{
-	if(EV_ERROR & revents)
-	{
-		_LOG("web cb error.");
-		return;
-	}
-
-	//recv data
 	
-}
-
 static char* createCmdJson(char* optstring, int server_port, char* passwd)
 {
 	static char cmd[SS_CMD_SIZE];
@@ -51,6 +34,8 @@ static char* createCmdJson(char* optstring, int server_port, char* passwd)
 	}
 	else if(strcmp(optstring,"purge") == 0)
 		snprintf(cmd,SS_CMD_SIZE,"{\"cmd\":\"purge\"}");
+	else
+		return NULL;
 
 	return cmd;
 }
@@ -135,8 +120,8 @@ static int sql_loadPortTable_cb(void* arg, int num, char** ctx, char** colname)
 			info->port = atoi(ctx[i]);
 		else if(strcmp(colname[i],"password") == 0)
 		{
-			strncpy(info->passwd,ctx[i],SS_CFG_OPT_SIZE_SMALL);
-			info->passwd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+			strncpy(info->password,ctx[i],SS_CFG_OPT_SIZE_SMALL);
+			info->password[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
 		}
 		else if(strcmp(colname[i],"ip_group") == 0)
 			info->group = atoi(ctx[i]);
@@ -146,62 +131,39 @@ static int sql_loadPortTable_cb(void* arg, int num, char** ctx, char** colname)
 	return 0;
 }
 
-static int sql_sendTossman_cb(void* arg, int num, char** ctx, char** colname)
+static int sql_ssmanCmd_cb(void* arg, int num, char** ctx, char** colname)
 {
 	_server_ssman_cb_str* info = arg;
 
-	*(info->plan_num) += 1;
-	
+	info->plan_num += 1;
+
 	int i;
 	for(i=0;i<num;i++)
 		if(strcmp(colname[i],"ip") == 0)
 			info->net.addr->sin_addr.s_addr = inet_addr(ctx[i]);
 
-	//send cmd
-	char* cmd = createCmdJson("add",info->info->port,info->info->passwd);
-	sendto(info->net.fd,cmd,strlen(cmd),0,(struct sockaddr*)info->net.addr, sizeof(struct sockaddr_in));
-
-	//recv ack
-	char ack[SS_CFG_OPT_SIZE_SMALL];
-	strncpy(ack,SS_ACK_ERR,SS_CFG_OPT_SIZE_SMALL);
-	struct sockaddr_in remoteAddr;
-	remoteAddr.sin_family = AF_INET;
-	socklen_t len = sizeof(remoteAddr);
-	int ret = recvfrom(info->net.fd,ack,SS_CFG_OPT_SIZE_SMALL,0,(struct sockaddr*)&remoteAddr,&len);
-	if(ret>0)
-		ack[ret] = '\0';
-	if(strcmp(ack,SS_ACK_OK) == 0)
-		*(info->success_num) += 1;
+	char* cmd = createCmdJson(info->cmd,info->info->port,info->info->password);
+	if(cmd)
+	{
+		if(send_cmd(cmd,strlen(cmd),info->net.addr,info->net.fd) == SS_OK)
+			info->success_num += 1;
+	}
 
 	return 0;
 }
 
-static int sql_ssmanPurge_cb(void* arg, int num, char** ctx, char** colname)
+static int sql_portAvailable_cb(void* arg, int num, char** ctx, char** colname)
 {
-	_server_ssman_cb_str* info = arg;
-	
-	*(info->plan_num) += 1;
+	_server_info* info = arg;
 	
 	int i;
 	for(i=0;i<num;i++)
-		if(strcmp(colname[i],"ip") == 0)
-			info->net.addr->sin_addr.s_addr = inet_addr(ctx[i]);
-	
-	//send cmd
-	char* cmd = createCmdJson("purge",0,NULL);
-	sendto(info->net.fd,cmd,strlen(cmd),0,(struct sockaddr*)info->net.addr,sizeof(struct sockaddr_in));
-
-	//recv ack
-	char ack[SS_CFG_OPT_SIZE_SMALL];
-	strncpy(ack,SS_ACK_ERR,SS_CFG_OPT_SIZE_SMALL);
-	struct sockaddr_in remoteAddr;
-	remoteAddr.sin_family = AF_INET;
-	socklen_t len =sizeof(remoteAddr);
-	int ret = recvfrom(info->net.fd,ack,SS_CFG_OPT_SIZE_SMALL,0,(struct sockaddr*)&remoteAddr,&len);
-	if(ret>0)
-		ack[ret] = '\0';
-	if(strcmp(ack,SS_ACK_OK) == 0)
-		*(info->success_num) += 1;
+	{
+		if(strcmp(colname[i],"port") == 0)
+			info->port = atoi(ctx[i]);
+		else if(strcmp(colname[i],"ip_group") == 0)
+			info->group = atoi(ctx[i]);
+	}
 
 	return 0;
 }
@@ -214,6 +176,212 @@ static int sql_debug_cb(void* arg, int num, char** ctx, char** colname)
 	printf("\n");
 
 	return 0;
+}
+
+//parse data function
+static int parseMsg_ssman(char* msg, struct sockaddr_in* addr, ssman_db_obj* obj)
+{
+	//ssman data format : {"xxxx":xxx,...}
+	char* start = strchr(msg,'{');
+	if(start == NULL)
+		return SS_ERR;
+
+	json_value* json_obj = json_parse(start,strlen(msg)-(start-msg));
+	if(json_obj == NULL)
+		return SS_ERR;
+	if(json_obj->type != json_object)
+	{
+		json_value_free(json_obj);
+		return SS_ERR;
+	}
+
+	//parse json file and update portList in db
+	unsigned int i;
+	char cmd[SS_CFG_OPT_SIZE];
+	for(i=0;i<json_obj->u.object.length;i++)
+	{
+		int port = atoi(json_obj->u.object.values[i].name);
+		int dataUsage = json_obj->u.object.values[i].value->u.integer;
+
+		snprintf(cmd,SS_CFG_OPT_SIZE,"update port_list set dataUsage = dataUsage + %d where used = 1 and port = %d and ip_group = (select ip_group from ipList where ip = %s);",dataUsage,port,inet_ntoa(addr->sin_addr));
+		sqlite3_exec(obj->db,cmd,NULL,NULL,NULL);
+	}
+
+	json_value_free(json_obj);
+
+	return SS_OK;
+}
+
+static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
+{
+	snprintf(result,SS_RESULT_SIZE,"{%s}",SS_JSON_FAILED);
+
+	//msg from webserver is a json file as show below
+	//{
+	//	"cmd"="xxx";
+	//	"password"="xxx";
+	//	...
+	//}
+	//
+	//result also is a json msg as shwo below
+	//{
+	//	"result":"xxx";
+	//	"success":x;
+	//	"failed":x;
+	//	"ctx":"xxx";
+	//	...
+	//}
+	
+	char sql_cmd[SS_CFG_OPT_SIZE];
+	char* start = strchr(msg,'{');
+	if(start == NULL)
+		return SS_ERR;
+
+	json_value* json_obj = json_parse(start,strlen(msg)-(start-msg));
+	if(json_obj == NULL)
+		return SS_ERR;
+
+	if(json_obj->type != json_object)
+	{
+		json_value_free(json_obj);
+		return SS_ERR;
+	}
+
+	//parse json file
+	_server_info detail;
+	memset(&detail,0,sizeof(_server_info));
+	char cmd[SS_CFG_OPT_SIZE_SMALL];
+	memset(cmd,0,SS_CFG_OPT_SIZE_SMALL);
+
+	unsigned int i;
+	for(i=0;i<json_obj->u.object.length;i++)
+	{
+		char* name = json_obj->u.object.values[i].name;
+		json_value* value = json_obj->u.object.values[i].value;
+
+		if(strcmp(name,"cmd") == 0)
+		{
+			strncpy(cmd,value->u.string.ptr,SS_CFG_OPT_SIZE_SMALL);
+			cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+		}
+		if(strcmp(name,"password") == 0)
+		{
+			strncpy(detail.password,value->u.string.ptr,SS_CFG_OPT_SIZE_SMALL);
+			detail.password[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+		}
+		if(strcmp(name,"group") == 0)
+			detail.group = value->u.integer;
+		if(strcmp(name,"port") == 0)
+			detail.port = value->u.integer;
+	}
+
+	json_value_free(json_obj);
+
+	//operate cmd
+	if(strcmp(cmd,"add") == 0)
+	{
+		_LOG("cmd: add");
+		//check neccesary option
+		if(detail.password[0] == '\0')
+			return SS_ERR;
+
+		//check available port in portList
+		_server_info item;
+		memset(&item,0,sizeof(_server_info));
+		sqlite3_exec(obj->db,"select port,ip_group from portList where used = 0 limit 1;",sql_portAvailable_cb,&item,NULL);
+		if(item.port == 0)
+			return SS_ERR;
+
+		//add into portList
+		snprintf(sql_cmd,SS_CFG_OPT_SIZE,"update portList set used = 1 where port = %d and ip_group = %d;",item.port,item.group);
+		sqlite3_exec(obj->db,sql_cmd,NULL,NULL,NULL);
+
+		//send to remote ssman
+		_server_ssman_cb_str info;
+		strncpy(item.password,detail.password,SS_CFG_OPT_SIZE_SMALL);
+		item.password[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+		info.info = &item;
+		info.net.fd = obj->config->ssman_fd;
+		info.net.addr= &(obj->config->ssmanAddr);
+		info.plan_num = 0;
+		info.success_num = 0;
+		//set cmd "add"
+		strncpy(info.cmd,"add",SS_CFG_OPT_SIZE_SMALL);
+		info.cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+
+		snprintf(sql_cmd,SS_CFG_OPT_SIZE,"select ip from ipList where ip_group = %d;",item.group);
+		sqlite3_exec(obj->db,sql_cmd,sql_ssmanCmd_cb,&info,NULL);
+
+		//report in result
+		snprintf(result,SS_RESULT_SIZE,"{%s,\"plan\":%d,\"success\":%d}",SS_JSON_SUCCESS,info.plan_num,info.success_num);
+	}
+	else
+		return SS_ERR;
+	
+	return SS_OK;
+}
+
+//ev_io cb
+static void ssman_cb(EV_P_ ev_io* watcher, int revents)
+{
+	if(EV_ERROR & revents)
+	{
+		_LOG("ssman cb error.");
+		return;
+	}
+
+	//recv data
+	char buffer[SS_RECVBUF_SIZE];
+	struct sockaddr_in remoteAddr;
+
+	socklen_t remoteAddr_len = sizeof(remoteAddr);
+	int len = recvfrom(watcher->fd, buffer,sizeof(buffer), 0, (struct sockaddr*)&remoteAddr, &remoteAddr_len);
+	if(len < 0)
+	{
+		_LOG("ssman cb recv error.");
+		return;
+	}
+	buffer[len]='\0';
+	
+	_LOG(buffer);
+	//parse data and update db
+	if(parseMsg_ssman(buffer,&remoteAddr,(ssman_db_obj*)watcher->data) == SS_ERR)
+		_LOG("ssman cb parse msg error.");
+
+	return;
+}
+
+static void web_cb(EV_P_ ev_io* watcher, int revents)
+{
+	if(EV_ERROR & revents)
+	{
+		_LOG("web cb error.");
+		return;
+	}
+
+	//recv data
+	char buffer[SS_RECVBUF_SIZE];
+	struct sockaddr_in remoteAddr;
+
+	socklen_t remoteAddr_len = sizeof(remoteAddr);
+	int len = recvfrom(watcher->fd, buffer,sizeof(buffer), 0, (struct sockaddr*)&remoteAddr, &remoteAddr_len);
+	if(len < 0)
+	{
+		_LOG("web cb recv error.");
+		return;
+	}
+	buffer[len]='\0';
+
+	//parse data and operate cmd
+	char result[SS_RESULT_SIZE];
+
+	int ret = parseMsg_web(buffer,(ssman_db_obj*)watcher->data,result);
+	if(ret == SS_ERR)
+		_LOG("web cb parse msg error.");
+
+	sendto(watcher->fd,result,strlen(result),0,(struct sockaddr*)&remoteAddr,sizeof(remoteAddr));
+
+	return;
 }
 
 int ssman_db_init(ssman_db_obj* obj)
@@ -232,7 +400,8 @@ int ssman_db_init(ssman_db_obj* obj)
 	}
 	config->ssmanAddr.sin_family = AF_INET;
 	config->ssmanAddr.sin_port = htons(config->ssman_serverPort);
-	struct timeval tv = {0,500000};
+	struct timeval tv = {.tv_sec = 0,.tv_usec = 500000};
+	tv.tv_sec = 0;
 	setsockopt(config->ssman_fd,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof(struct timeval));
 
 	//--------------------create event------------------------------------
@@ -646,27 +815,28 @@ int ssman_db_updateDb(char* ipList, char* configPath, char* dbPath)
 int ssman_db_deploy(ssman_db_obj* obj)
 {
 	char cmd[SS_CFG_OPT_SIZE];
-	int plan_num = 0;
-	int success_num = 0;
 
 	//fill ssman cb arg str
 	_server_ssman_cb_str info;
 	info.net.fd = obj->config->ssman_fd;
-	info.plan_num = &plan_num;
-	info.success_num = &success_num;
+	info.plan_num = 0;
+	info.success_num = 0;
 	info.net.addr = &(obj->config->ssmanAddr);
 
 	//first remote ssman purge
-	sqlite3_exec(obj->db,"select ip from ipList where ip_group in (select distinct ip_group from portList);",sql_ssmanPurge_cb,&info,NULL);
+	//set cmd "purge"
+	strncpy(info.cmd,"purge",SS_CFG_OPT_SIZE_SMALL);
+	info.cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+	sqlite3_exec(obj->db,"select ip from ipList where ip_group in (select distinct ip_group from portList);",sql_ssmanCmd_cb,&info,NULL);
 	
 	//purge report
-	snprintf(cmd,SS_CFG_OPT_SIZE,"remote ssman purge finished, plan:%d, success:%d.",plan_num,success_num);
+	snprintf(cmd,SS_CFG_OPT_SIZE,"remote ssman purge finished, plan:%d, success:%d.",info.plan_num,info.success_num);
 	_LOG(cmd);
 
-	//then let remote ssman add ss-server according portList
+	//then deploy ss-server according portList
 	int num = 0;
-	plan_num = 0;
-	success_num = 0;
+	info.plan_num = 0;
+	info.success_num = 0;
 	
 	sqlite3_exec(obj->db,"select count(*) from portList where used = 1 ;",sql_count_cb,&num,NULL);
 	if(num)
@@ -682,20 +852,24 @@ int ssman_db_deploy(ssman_db_obj* obj)
 		
 		sqlite3_exec(obj->db,"select port,password,ip_group from portList where used = 1;",sql_loadPortTable_cb,&port_list,NULL);
 
+		//set cmd "add"
+		strncpy(info.cmd,"add",SS_CFG_OPT_SIZE_SMALL);
+		info.cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+
 		int i;
 		for(i=0;i<num;i++)
 		{
 			info.info = &(port_list.list[i]);
 
 			snprintf(cmd,SS_CFG_OPT_SIZE,"select ip from ipList where ip_group = %d;",info.info->group);
-			sqlite3_exec(obj->db,cmd,sql_sendTossman_cb,&info,NULL);
+			sqlite3_exec(obj->db,cmd,sql_ssmanCmd_cb,&info,NULL);
 		}
 
 		free(port_list.list);
 	}
 
-	//start report
-	snprintf(cmd,SS_CFG_OPT_SIZE,"deploy remote ss-server finished, num:%d, plan:%d, success:%d.",num,plan_num,success_num);
+	//deploy report
+	snprintf(cmd,SS_CFG_OPT_SIZE,"deploy remote ss-server finished, num:%d, plan:%d, success:%d.",num,info.plan_num,info.success_num);
 	_LOG(cmd);
 
 	return SS_OK;

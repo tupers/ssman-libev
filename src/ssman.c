@@ -26,6 +26,8 @@ static void ss_cb(EV_P_ ev_io* watcher, int revents)
 	int ret = ssman_parseMsg_ss(buffer,(ssman_obj*)watcher->data);
 	if(ret == SS_ERR)
 		_LOG("ss cb parse msg error");
+
+	return;
 }
 
 static void web_cb(EV_P_ ev_io* watcher, int revents)
@@ -58,6 +60,8 @@ static void web_cb(EV_P_ ev_io* watcher, int revents)
 		_LOG("web cb parse msg error.");
 
 	sendto(watcher->fd,result,strlen(result),0,(struct sockaddr*)&remoteAddr, sizeof(remoteAddr));
+
+	return;
 }
 
 static void sendtoDb_cb(EV_P_ ev_timer* watcher, int revents)
@@ -528,8 +532,6 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 
 	json_value_free(json_obj);
 
-	char* systemCmd = NULL;
-
 	//operate cmd
 	if(strcmp(cmd,"add")==0)
 	{
@@ -547,6 +549,7 @@ int ssman_parseMsg_web(char* msg, ssman_obj* obj, char* result)
 			return SS_ERR;
 
 		//build cmd for system()
+		char* systemCmd = NULL;
 		systemCmd = createCmdString(&detail);
 		if(systemCmd == NULL)
 		{

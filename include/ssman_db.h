@@ -32,7 +32,7 @@ typedef struct
 
 typedef struct
 {
-	char passwd[SS_CFG_OPT_SIZE_SMALL];
+	char password[SS_CFG_OPT_SIZE_SMALL];
 	int port;
 	int group;
 }_server_info;
@@ -51,8 +51,9 @@ typedef struct
 
 typedef struct
 {
-	int* plan_num;
-	int* success_num;
+	char cmd[SS_CFG_OPT_SIZE_SMALL];
+	int plan_num;
+	int success_num;
 	_server_ssman_udp net;
 	_server_info* info;
 }_server_ssman_cb_str;

@@ -20,6 +20,8 @@
 //ack
 #define SS_ACK_OK 	"ok"
 #define SS_ACK_ERR 	"err"
+#define SS_JSON_SUCCESS	"\"ret\":\"success\""
+#define SS_JSON_FAILED	"\"ret\":\"failed\""
 
 //size
 #define SS_RECVBUF_SIZE 1024
