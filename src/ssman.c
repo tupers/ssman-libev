@@ -335,6 +335,9 @@ int ssman_init(ssman_obj* obj)
 
 void ssman_deinit(ssman_obj* obj)
 {
+	if(obj == NULL)
+		return;
+
 	int i;
 	
 	//first free ssman_event

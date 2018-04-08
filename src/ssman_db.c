@@ -131,6 +131,23 @@ static int sql_loadPortTable_cb(void* arg, int num, char** ctx, char** colname)
 	return 0;
 }
 
+static int sql_loadIpTable_cb(void* arg, int num, char** ctx, char** colname)
+{
+	_server_ip_list* list = arg;
+	_server_ip* ip = &(list->list[list->i]);
+	int i;
+	for(i=0;i<num;i++)
+		if(strcmp(colname[i],"ip") == 0)
+		{
+			strncpy(ip->ip,ctx[i],SS_IP_ADDR);
+			ip->ip[SS_IP_ADDR-1] = '\0';
+		}
+		
+	list->i += 1;
+
+	return 0;
+}
+
 static int sql_ssmanCmd_cb(void* arg, int num, char** ctx, char** colname)
 {
 	_server_ssman_cb_str* info = arg;
@@ -163,6 +180,21 @@ static int sql_portAvailable_cb(void* arg, int num, char** ctx, char** colname)
 			info->port = atoi(ctx[i]);
 		else if(strcmp(colname[i],"ip_group") == 0)
 			info->group = atoi(ctx[i]);
+		else if(strcmp(colname[i],"password") == 0)
+		{
+			strncpy(info->password,ctx[i],SS_CFG_OPT_SIZE_SMALL);
+			info->password[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+		}
+		else if(strcmp(colname[i],"dataUsage") == 0)
+			info->dataUsage = atoi(ctx[i]);
+		else if(strcmp(colname[i],"dataLimit") == 0)
+			info->dataLimit = atoi(ctx[i]);
+		else if(strcmp(colname[i],"strategy") == 0)
+			info->strategy = atoi(ctx[i]);
+		else if(strcmp(colname[i],"used") == 0)
+			info->used = atoi(ctx[i]);
+		else if(strcmp(colname[i],"owner") == 0)
+			info->owner = atoi(ctx[i]);
 	}
 
 	return 0;
@@ -252,6 +284,8 @@ static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
 	memset(&detail,0,sizeof(_server_info));
 	char cmd[SS_CFG_OPT_SIZE_SMALL];
 	memset(cmd,0,SS_CFG_OPT_SIZE_SMALL);
+	detail.port = -1;
+	detail.group = -1;
 
 	unsigned int i;
 	for(i=0;i<json_obj->u.object.length;i++)
@@ -288,7 +322,7 @@ static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
 		//check available port in portList
 		_server_info item;
 		memset(&item,0,sizeof(_server_info));
-		sqlite3_exec(obj->db,"select port,ip_group from portList where used = 0 limit 1;",sql_portAvailable_cb,&item,NULL);
+		sqlite3_exec(obj->db,"select * from portList where used = 0 limit 1;",sql_portAvailable_cb,&item,NULL);
 		if(item.port == 0)
 			return SS_ERR;
 
@@ -314,6 +348,56 @@ static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
 
 		//report in result
 		snprintf(result,SS_RESULT_SIZE,"{%s,\"plan\":%d,\"success\":%d}",SS_JSON_SUCCESS,info.plan_num,info.success_num);
+	}
+	else if(strcmp(cmd,"get") == 0)
+	{
+		_LOG("cmd:get");
+		//check neccesary option
+		if(detail.port == -1 || detail.group ==-1)
+			return SS_ERR;
+
+		//get available info from portList
+		_server_info item;
+		memset(&item,0,sizeof(_server_info));	
+		sqlite3_exec(obj->db,"select * from portList where used = 0 limit 1;",sql_portAvailable_cb,&item,NULL);
+		if(item.port == 0)
+			return SS_ERR;
+
+		//get ip list
+		int ip_num = 0;
+		snprintf(sql_cmd,SS_CFG_OPT_SIZE,"select count(*) from ipList where ip_group = %d;",item.group);
+		sqlite3_exec(obj->db,sql_cmd,sql_count_cb,&ip_num,NULL);
+		if(ip_num == 0)
+			return SS_ERR;
+		
+		_server_ip_list ip_list;
+		ip_list.i = 0;
+		ip_list.list = (_server_ip*)malloc(sizeof(_server_ip)*ip_num);
+		if(ip_list.list == NULL)
+			return SS_ERR;
+
+		snprintf(sql_cmd,SS_CFG_OPT_SIZE,"select ip from ipList where ip_group = %d;",item.group);
+		printf("%s\n",sql_cmd);
+		sqlite3_exec(obj->db,sql_cmd,sql_loadIpTable_cb,&ip_list,NULL);
+
+		//report in result
+		snprintf(result,SS_RESULT_SIZE,"{%s,\"port\":%d,\"dataUsage\":%d,\"dataLimit\":%d,\"strategy\":%d,\"used\":%d,\"owner\":%d,\"ip\":[",SS_JSON_SUCCESS,item.port,item.dataUsage,item.dataLimit,item.strategy,item.used,item.owner);
+		int i;
+		int offset;
+		int size;
+		for(i=0;i<ip_num;i++)
+		{
+			offset = strlen(result);
+			size = SS_RESULT_SIZE - offset;
+			if(size>0)
+				snprintf(result+offset,size,"%s,",ip_list.list[i].ip);
+		}
+		offset = strlen(result)-1;
+		size = SS_RESULT_SIZE - offset;
+		if(size>0)
+			snprintf(result+offset,size,"]}");
+
+		free(ip_list.list);
 	}
 	else
 		return SS_ERR;
@@ -496,8 +580,9 @@ int ssman_db_init(ssman_db_obj* obj)
 
 void ssman_db_deinit(ssman_db_obj* obj)
 {
+	if(obj == NULL)
+		return;
 	int i;
-
 	//first free ssman_db_event
 	if(obj->event)
 	{
@@ -554,7 +639,7 @@ void ssman_db_deinit(ssman_db_obj* obj)
 		sqlite3_close(obj->db);
 	
 	//clean ssman_db_obj
-	memset(&obj,0,sizeof(ssman_db_obj));
+	memset(obj,0,sizeof(ssman_db_obj));
 }
 
 void ssman_db_exec(ssman_db_obj* obj)
@@ -715,7 +800,6 @@ int ssman_db_updateDb(char* ipList, char* configPath, char* dbPath)
 					snprintf(cmd,SS_CFG_OPT_SIZE,"update ipList set flag = 1 where ip = \'%s\';",ip);
 					sqlite3_exec(db,cmd,NULL,NULL,NULL);
 				}
-
 			}
 		}
 	}

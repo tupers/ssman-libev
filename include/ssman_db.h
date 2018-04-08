@@ -35,6 +35,11 @@ typedef struct
 	char password[SS_CFG_OPT_SIZE_SMALL];
 	int port;
 	int group;
+	int dataUsage;
+	int dataLimit;
+	int strategy;
+	int used;
+	int owner;
 }_server_info;
 
 typedef struct
@@ -57,6 +62,17 @@ typedef struct
 	_server_ssman_udp net;
 	_server_info* info;
 }_server_ssman_cb_str;
+
+typedef struct
+{
+	char ip[SS_IP_ADDR];
+}_server_ip;
+
+typedef struct
+{
+	int i;
+	_server_ip* list;
+}_server_ip_list;
 
 int ssman_db_init(ssman_db_obj* obj);
 void ssman_db_deinit(ssman_db_obj* obj);
