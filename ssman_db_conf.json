@@ -1,5 +1,5 @@
 {
-	"db_path":"/tmp/test.db",
+	"db_path":"/tmp/ssman/test.db",
 	"ssman_localPort":9004,
 	"ssman_serverPort":9000,
 	"ssman_pulsePort":9002,

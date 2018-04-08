@@ -7,7 +7,7 @@
 typedef ssman_event ssman_db_event;
 
 #define SQL_CREATE_IPLIST 	"create table if not exists ipList(ip text primary key, ip_group integer default 0, flag integer default 0);"
-#define SQL_CREATE_PORTLIST	"create table if not exists portList(port integer, password text default \'00000000\', ip_group integer default 0, dataUsage integer default 0, dataLimit integer default -1, strategy integer default 0, used integer default 0, owner integer default 0, flag integer default 0);"
+#define SQL_CREATE_PORTLIST	"create table if not exists portList(port integer, password text default \'00000000\', ip_group integer default 0, dataUsage integer default 0, dataLimit integer default -1, strategy integer default 0, used integer default 0, flag integer default 0);"
 #define SQL_LIST_TABLE		"select name from sqlite_master where type = 'table' order by name;"
 
 #define SS_DB_DEFAULTPATH 	"/tmp/test.db"
@@ -39,7 +39,6 @@ typedef struct
 	int dataLimit;
 	int strategy;
 	int used;
-	int owner;
 }_server_info;
 
 typedef struct

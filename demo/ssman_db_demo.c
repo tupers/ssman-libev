@@ -97,6 +97,9 @@ int main(int argc, char **argv)
 			}
 	}
 
+	if(cfgPath == NULL)
+		exit(EXIT_SUCCESS);
+
 	//start main process
 	ssman_db_obj obj;
 	memset(&obj,0,sizeof(ssman_db_obj));
