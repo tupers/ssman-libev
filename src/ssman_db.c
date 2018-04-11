@@ -198,6 +198,28 @@ static int sql_portAvailable_cb(void* arg, int num, char** ctx, char** colname)
 	return 0;
 }
 
+static int sql_strategy_cb(void* arg,int num, char** ctx, char** colname)
+{
+	int dataUsage = 0;
+	int dataLimit = -1;
+	int i;
+	for(i=0;i<num;i++)
+	{
+		if(strcmp(colname[i],"dataUsage") == 0)
+			dataUsage = atoi(ctx[i]);
+		else if(strcmp(colname[i],"dataLimit") == 0)
+			dataLimit = atoi(ctx[i]);
+	}
+
+	if(dataLimit != -1)
+		if(dataUsage > dataLimit)
+		{
+			//remove this port
+		}
+
+	return 0;
+}
+
 static int sql_debug_cb(void* arg, int num, char** ctx, char** colname)
 {
 	int i;
@@ -235,6 +257,11 @@ static int parseMsg_ssman(char* msg, struct sockaddr_in* addr, ssman_db_obj* obj
 
 		snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set dataUsage = dataUsage + %d where used = 1 and port = %d and ip_group = (select ip_group from ipList where ip = \'%s\');",dataUsage,port,inet_ntoa(addr->sin_addr));
 		sqlite3_exec(obj->db,cmd,NULL,NULL,NULL);
+		
+		//check data limit
+		snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"select ip,port from (select * from ipList where ip_group = (select ip_group from ipList where ip=\'%s\')) natural join (select * from portList where port = %d)",inet_ntoa(addr->sin_addr),port);
+		
+		
 	}
 
 	json_value_free(json_obj);
