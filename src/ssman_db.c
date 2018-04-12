@@ -34,6 +34,8 @@ static char* createCmdJson(char* optstring, int server_port, char* passwd)
 	}
 	else if(strcmp(optstring,"purge") == 0)
 		snprintf(cmd,SS_CMD_SIZE,"{\"cmd\":\"purge\"}");
+	else if(strcmp(optstring,"remove") == 0)
+		snprintf(cmd,SS_CMD_SIZE,"{\"cmd\":\"remove\",\"server_port\":%d}",server_port);
 	else
 		return NULL;
 
@@ -110,27 +112,6 @@ static int isPortExisted(sqlite3* db,int port,int group)
 		return SS_ERR;
 }
 
-static int sql_loadPortTable_cb(void* arg, int num, char** ctx, char** colname)
-{
-	_server_list* list = arg;
-	_server_info* info = &(list->list[list->i]);
-	int i;
-	for(i=0;i<num;i++)
-		if(strcmp(colname[i],"port") == 0)
-			info->port = atoi(ctx[i]);
-		else if(strcmp(colname[i],"password") == 0)
-		{
-			strncpy(info->password,ctx[i],SS_CFG_OPT_SIZE_SMALL);
-			info->password[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
-		}
-		else if(strcmp(colname[i],"ip_group") == 0)
-			info->group = atoi(ctx[i]);
-	
-	list->i += 1;
-	
-	return 0;
-}
-
 static int sql_loadIpTable_cb(void* arg, int num, char** ctx, char** colname)
 {
 	_server_ip_list* list = arg;
@@ -154,12 +135,28 @@ static int sql_ssmanCmd_cb(void* arg, int num, char** ctx, char** colname)
 
 	info->plan_num += 1;
 
+	int port = 0;
+	char password[SS_CFG_OPT_SIZE_SMALL];
+	memset(password,0,SS_CFG_OPT_SIZE_SMALL);
+
 	int i;
 	for(i=0;i<num;i++)
-		if(strcmp(colname[i],"ip") == 0)
+		if(strcmp(colname[i],"port") == 0)
+			port = atoi(ctx[i]);
+		else if(strcmp(colname[i],"ip") == 0)
 			info->net.addr->sin_addr.s_addr = inet_addr(ctx[i]);
+		else if(strcmp(colname[i],"password") == 0)
+		{
+			strncpy(password,ctx[i],SS_CFG_OPT_SIZE_SMALL);
+			password[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+		}
 
-	char* cmd = createCmdJson(info->cmd,info->info->port,info->info->password);
+	char* cmd = NULL;
+       	if(strcmp(info->cmd,"deploy") == 0)
+		cmd = createCmdJson("add",port,password);
+	else
+		cmd = createCmdJson(info->cmd,port,info->password);
+	
 	if(cmd)
 	{
 		if(send_cmd(cmd,strlen(cmd),info->net.addr,info->net.fd) == SS_OK)
@@ -169,7 +166,7 @@ static int sql_ssmanCmd_cb(void* arg, int num, char** ctx, char** colname)
 	return 0;
 }
 
-static int sql_portAvailable_cb(void* arg, int num, char** ctx, char** colname)
+static int sql_portAttribute_cb(void* arg, int num, char** ctx, char** colname)
 {
 	_server_info* info = arg;
 	
@@ -193,45 +190,6 @@ static int sql_portAvailable_cb(void* arg, int num, char** ctx, char** colname)
 			info->strategy = atoi(ctx[i]);
 		else if(strcmp(colname[i],"used") == 0)
 			info->used = atoi(ctx[i]);
-	}
-
-	return 0;
-}
-
-static int sql_strategy_cb(void* arg,int num, char** ctx, char** colname)
-{
-	_server_ssman_cb_str* info = arg;
-
-	info->plan_num += 1;
-	
-	int dataUsage = 0;
-	int dataLimit = -1;
-	int port = 0;
-	int i;
-	for(i=0;i<num;i++)
-	{
-		if(strcmp(colname[i],"dataUsage") == 0)
-			dataUsage = atoi(ctx[i]);
-		else if(strcmp(colname[i],"dataLimit") == 0)
-			dataLimit = atoi(ctx[i]);
-		else if(strcmp(colname[i],"port") == 0)
-			port = atoi(ctx[i]);
-		else if(strcmp(colname[i],"ip") == 0)
-			info->net.addr->sin_addr.s_addr = inet_addr(ctx[i]);
-	}
-
-	if(dataLimit == -1)
-		return 0;
-	
-	if(dataUsage > dataLimit)
-	{
-		//remove this port
-		char* cmd = createCmdJson("remove",port,NULL);
-		if(cmd)
-		{
-			if(send_cmd(cmd,strlen(cmd),info->net.addr,info->net.fd) == SS_OK)
-				info->success_num += 1;
-		}
 	}
 
 	return 0;
@@ -274,11 +232,20 @@ static int parseMsg_ssman(char* msg, struct sockaddr_in* addr, ssman_db_obj* obj
 
 		snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set dataUsage = dataUsage + %d where used = 1 and port = %d and ip_group = (select ip_group from ipList where ip = \'%s\');",dataUsage,port,inet_ntoa(addr->sin_addr));
 		sqlite3_exec(obj->db,cmd,NULL,NULL,NULL);
-		
-		//check data limit
-		snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"select ip,port,dataUsage,dataLimit from (select * from ipList where ip_group = (select ip_group from ipList where ip=\'%s\')) natural join (select * from portList where port = %d)",inet_ntoa(addr->sin_addr),port);
-		sqlite3_exec(obj->db,cmd,sql_strategy_cb,NULL,NULL);
 	}
+
+	//check dataUsage, if bigger than dataLimit remove it
+	_server_ssman_cb_str info;
+	info.net.fd = obj->config->ssman_fd;
+	info.net.addr= &(obj->config->ssmanAddr);
+	info.plan_num = 0;
+	info.success_num = 0;
+	//set cmd "remove"
+	strncpy(info.cmd,"remove",SS_CFG_OPT_SIZE_SMALL);
+	info.cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+	
+	sqlite3_exec(obj->db,"select ip,port from (select * from portList where dataLimit != -1 and dataUsage>=dataLimit) natural join ipList;",sql_ssmanCmd_cb,&info,NULL);
+	sqlite3_exec(obj->db,"update portList set used = 0 where dataLimit != -1 and dataUsage>=dataLimit;",NULL,NULL,NULL);
 
 	json_value_free(json_obj);
 
@@ -305,7 +272,7 @@ static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
 	//	...
 	//}
 	
-	char sql_cmd[SS_CFG_OPT_SIZE];
+	char sql_cmd[SS_CFG_OPT_SIZE_LARGE];
 	char* start = strchr(msg,'{');
 	if(start == NULL)
 		return SS_ERR;
@@ -366,33 +333,31 @@ static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
 		//check available port in portList
 		_server_info item;
 		memset(&item,0,sizeof(_server_info));
-		sqlite3_exec(obj->db,"select * from portList where used = 0 limit 1;",sql_portAvailable_cb,&item,NULL);
-		if(item.port == -1)
+		sqlite3_exec(obj->db,"select * from portList where used = 0 limit 1;",sql_portAttribute_cb,&item,NULL);
+		if(item.port == 0)
 			return SS_ERR;
 		
 		//fill item from detail
-		strncpy(item.password,detail.password,SS_CFG_OPT_SIZE_SMALL);
-		item.password[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
-		if(detail.strategy >= 0)
-			item.strategy = detail.strategy;
-		item.used = 1;
+		//if(detail.strategy >= 0)
+		//	item.strategy = detail.strategy;
 
 		//add into portList
-		snprintf(sql_cmd,SS_CFG_OPT_SIZE,"update portList set password=\'%s\', strategy=%d, used=%d where port = %d and ip_group = %d;",item.password,item.strategy,item.used,item.port,item.group);
+		snprintf(sql_cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set password=\'%s\', strategy=%d, used=%d where port = %d and ip_group = %d;",item.password,item.strategy,item.used,item.port,item.group);
 		sqlite3_exec(obj->db,sql_cmd,NULL,NULL,NULL);
 
 		//send to remote ssman
 		_server_ssman_cb_str info;
-		info.info = &item;
 		info.net.fd = obj->config->ssman_fd;
 		info.net.addr= &(obj->config->ssmanAddr);
+		strncpy(info.password,detail.password,SS_CFG_OPT_SIZE_SMALL);
+		info.password[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
 		info.plan_num = 0;
 		info.success_num = 0;
 		//set cmd "add"
 		strncpy(info.cmd,"add",SS_CFG_OPT_SIZE_SMALL);
 		info.cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
 
-		snprintf(sql_cmd,SS_CFG_OPT_SIZE,"select ip from ipList where ip_group = %d;",item.group);
+		snprintf(sql_cmd,SS_CFG_OPT_SIZE_LARGE,"select ip,port,password from (select * from portList where port = %d and ip_group = %d) natural join ipList;",item.port,item.group);
 		sqlite3_exec(obj->db,sql_cmd,sql_ssmanCmd_cb,&info,NULL);
 
 		//report in result
@@ -408,8 +373,8 @@ static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
 		//get available info from portList
 		_server_info item;
 		memset(&item,0,sizeof(_server_info));
-		snprintf(sql_cmd,SS_CFG_OPT_SIZE,"select * from portList where port=%d and ip_group=%d;",detail.port,detail.group);
-		sqlite3_exec(obj->db,sql_cmd,sql_portAvailable_cb,&item,NULL);
+		snprintf(sql_cmd,SS_CFG_OPT_SIZE_LARGE,"select * from portList where port=%d and ip_group=%d;",detail.port,detail.group);
+		sqlite3_exec(obj->db,sql_cmd,sql_portAttribute_cb,&item,NULL);
 		if(item.port == 0)
 			return SS_ERR;
 		
@@ -418,7 +383,7 @@ static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
 
 		//get ip list
 		int ip_num = 0;
-		snprintf(sql_cmd,SS_CFG_OPT_SIZE,"select count(*) from ipList where ip_group = %d;",item.group);
+		snprintf(sql_cmd,SS_CFG_OPT_SIZE_LARGE,"select count(*) from ipList where ip_group = %d;",item.group);
 		sqlite3_exec(obj->db,sql_cmd,sql_count_cb,&ip_num,NULL);
 		
 		int offset;
@@ -432,7 +397,7 @@ static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
 			if(ip_list.list == NULL)
 				return SS_ERR;
 
-			snprintf(sql_cmd,SS_CFG_OPT_SIZE,"select ip from ipList where ip_group = %d;",item.group);
+			snprintf(sql_cmd,SS_CFG_OPT_SIZE_LARGE,"select ip from ipList where ip_group = %d;",item.group);
 			sqlite3_exec(obj->db,sql_cmd,sql_loadIpTable_cb,&ip_list,NULL);
 
 			//add ip in result
@@ -955,7 +920,7 @@ int ssman_db_updateDb(char* ipList, char* configPath, char* dbPath)
 
 int ssman_db_deploy(ssman_db_obj* obj)
 {
-	char cmd[SS_CFG_OPT_SIZE];
+	char cmd[SS_CFG_OPT_SIZE_LARGE];
 
 	//fill ssman cb arg str
 	_server_ssman_cb_str info;
@@ -971,46 +936,17 @@ int ssman_db_deploy(ssman_db_obj* obj)
 	sqlite3_exec(obj->db,"select ip from ipList where ip_group in (select distinct ip_group from portList);",sql_ssmanCmd_cb,&info,NULL);
 	
 	//purge report
-	snprintf(cmd,SS_CFG_OPT_SIZE,"remote ssman purge finished, plan:%d, success:%d.",info.plan_num,info.success_num);
+	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"remote ssman purge finished, plan:%d, success:%d.",info.plan_num,info.success_num);
 	_LOG(cmd);
 
 	//then deploy ss-server according portList
-	int num = 0;
-	info.plan_num = 0;
-	info.success_num = 0;
-	
-	sqlite3_exec(obj->db,"select count(*) from portList where used = 1 ;",sql_count_cb,&num,NULL);
-	if(num)
-	{
-		_server_list port_list;
-		port_list.i = 0;
-		port_list.list = (_server_info*)malloc(sizeof(_server_info)*num);
-		if(port_list.list== NULL)
-		{
-			_LOG("Malloc port list failed.");
-			return SS_ERR;
-		}
-		
-		sqlite3_exec(obj->db,"select port,password,ip_group from portList where used = 1;",sql_loadPortTable_cb,&port_list,NULL);
-
-		//set cmd "add"
-		strncpy(info.cmd,"add",SS_CFG_OPT_SIZE_SMALL);
-		info.cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
-
-		int i;
-		for(i=0;i<num;i++)
-		{
-			info.info = &(port_list.list[i]);
-
-			snprintf(cmd,SS_CFG_OPT_SIZE,"select ip from ipList where ip_group = %d;",info.info->group);
-			sqlite3_exec(obj->db,cmd,sql_ssmanCmd_cb,&info,NULL);
-		}
-
-		free(port_list.list);
-	}
+	//set cmd "deploy"
+	strncpy(info.cmd,"deploy",SS_CFG_OPT_SIZE_SMALL);
+	info.cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+	sqlite3_exec(obj->db,"select ip,port,password from (select * from portList where used = 1) natural join ipList;",sql_ssmanCmd_cb,&info,NULL);
 
 	//deploy report
-	snprintf(cmd,SS_CFG_OPT_SIZE,"deploy remote ss-server finished, num:%d, plan:%d, success:%d.",num,info.plan_num,info.success_num);
+	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"deploy remote ss-server finished, plan:%d, success:%d.",info.plan_num,info.success_num);
 	_LOG(cmd);
 
 	return SS_OK;

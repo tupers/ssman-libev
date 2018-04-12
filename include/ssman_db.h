@@ -43,12 +43,6 @@ typedef struct
 
 typedef struct
 {
-	int i;
-	_server_info* list;
-}_server_list;
-
-typedef struct
-{
 	int fd;
 	struct sockaddr_in* addr;
 }_server_ssman_udp;
@@ -56,10 +50,10 @@ typedef struct
 typedef struct
 {
 	char cmd[SS_CFG_OPT_SIZE_SMALL];
+	char password[SS_CFG_OPT_SIZE_SMALL];
 	int plan_num;
 	int success_num;
 	_server_ssman_udp net;
-	_server_info* info;
 }_server_ssman_cb_str;
 
 typedef struct
