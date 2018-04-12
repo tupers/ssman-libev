@@ -200,8 +200,13 @@ static int sql_portAvailable_cb(void* arg, int num, char** ctx, char** colname)
 
 static int sql_strategy_cb(void* arg,int num, char** ctx, char** colname)
 {
+	_server_ssman_cb_str* info = arg;
+
+	info->plan_num += 1;
+	
 	int dataUsage = 0;
 	int dataLimit = -1;
+	int port = 0;
 	int i;
 	for(i=0;i<num;i++)
 	{
@@ -209,13 +214,25 @@ static int sql_strategy_cb(void* arg,int num, char** ctx, char** colname)
 			dataUsage = atoi(ctx[i]);
 		else if(strcmp(colname[i],"dataLimit") == 0)
 			dataLimit = atoi(ctx[i]);
+		else if(strcmp(colname[i],"port") == 0)
+			port = atoi(ctx[i]);
+		else if(strcmp(colname[i],"ip") == 0)
+			info->net.addr->sin_addr.s_addr = inet_addr(ctx[i]);
 	}
 
-	if(dataLimit != -1)
-		if(dataUsage > dataLimit)
+	if(dataLimit == -1)
+		return 0;
+	
+	if(dataUsage > dataLimit)
+	{
+		//remove this port
+		char* cmd = createCmdJson("remove",port,NULL);
+		if(cmd)
 		{
-			//remove this port
+			if(send_cmd(cmd,strlen(cmd),info->net.addr,info->net.fd) == SS_OK)
+				info->success_num += 1;
 		}
+	}
 
 	return 0;
 }
@@ -259,9 +276,8 @@ static int parseMsg_ssman(char* msg, struct sockaddr_in* addr, ssman_db_obj* obj
 		sqlite3_exec(obj->db,cmd,NULL,NULL,NULL);
 		
 		//check data limit
-		snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"select ip,port from (select * from ipList where ip_group = (select ip_group from ipList where ip=\'%s\')) natural join (select * from portList where port = %d)",inet_ntoa(addr->sin_addr),port);
-		
-		
+		snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"select ip,port,dataUsage,dataLimit from (select * from ipList where ip_group = (select ip_group from ipList where ip=\'%s\')) natural join (select * from portList where port = %d)",inet_ntoa(addr->sin_addr),port);
+		sqlite3_exec(obj->db,cmd,sql_strategy_cb,NULL,NULL);
 	}
 
 	json_value_free(json_obj);
