@@ -422,6 +422,13 @@ static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
 			result[SS_RESULT_SIZE-1] = '}';
 		}
 	}
+	else if(strcmp(cmd,"stop") == 0)
+	{
+		_LOG("cmd: stop");
+		//stop event loop
+		ev_break(obj->event->loop, EVBREAK_ALL);
+		snprintf(result,SS_RESULT_SIZE,"{%s}",SS_JSON_SUCCESS);
+	}
 	else
 		return SS_ERR;
 	
