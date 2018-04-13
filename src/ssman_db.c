@@ -342,7 +342,7 @@ static int parseMsg_web(char* msg, ssman_db_obj* obj, char* result)
 		//	item.strategy = detail.strategy;
 
 		//add into portList
-		snprintf(sql_cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set password=\'%s\', strategy=%d, used=%d where port = %d and ip_group = %d;",item.password,item.strategy,item.used,item.port,item.group);
+		snprintf(sql_cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set password=\'%s\', strategy=%d, used=%d where port = %d and ip_group = %d;",detail.password,item.strategy,1,item.port,item.group);
 		sqlite3_exec(obj->db,sql_cmd,NULL,NULL,NULL);
 
 		//send to remote ssman
