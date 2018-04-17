@@ -230,11 +230,14 @@ static int parseMsg_ssman(char* msg, struct sockaddr_in* addr, ssman_db_obj* obj
 		int port = atoi(json_obj->u.object.values[i].name);
 		int dataUsage = json_obj->u.object.values[i].value->u.integer;
 
-		snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set dataUsage = dataUsage + %d where used = 1 and port = %d and ip_group = (select ip_group from ipList where ip = \'%s\');",dataUsage,port,inet_ntoa(addr->sin_addr));
+		snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set dataUsage = dataUsage + %d where used = %d and port = %d and ip_group = (select ip_group from ipList where ip = \'%s\');",dataUsage,DB_PORT_RUNNING,port,inet_ntoa(addr->sin_addr));
 		sqlite3_exec(obj->db,cmd,NULL,NULL,NULL);
 	}
 
-	//check dataUsage, if bigger than dataLimit remove it
+	//run strategy
+	//
+	//1.pause port which dataUsage is bigger than dataLimit
+	//
 	_server_ssman_cb_str info;
 	info.net.fd = obj->config->ssman_fd;
 	info.net.addr= &(obj->config->ssmanAddr);
@@ -244,8 +247,27 @@ static int parseMsg_ssman(char* msg, struct sockaddr_in* addr, ssman_db_obj* obj
 	strncpy(info.cmd,"remove",SS_CFG_OPT_SIZE_SMALL);
 	info.cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
 	
-	sqlite3_exec(obj->db,"select ip,port from (select * from portList where dataLimit != -1 and dataUsage>=dataLimit) natural join ipList;",sql_ssmanCmd_cb,&info,NULL);
-	sqlite3_exec(obj->db,"update portList set used = 0 where dataLimit != -1 and dataUsage>=dataLimit;",NULL,NULL,NULL);
+	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"select ip,port from (select * from portList where dataLimit!=%d and dataUsage>=dataLimit and used=%d) natrual join ipList;",DB_PORT_NOLIMIT,DB_PORT_RUNNING);
+	sqlite3_exec(obj->db,cmd,sql_ssmanCmd_cb,&info,NULL);
+	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set used=%d where dataLimit!=%d and dataUsage>=dataLimit and used=%d;",DB_PORT_PAUSED,DB_PORT_NOLIMIT,DB_PORT_RUNNING);
+	sqlite3_exec(obj->db,cmd,NULL,NULL,NULL);
+	//
+	//2.refresh dataLimit if time reach peroid and restart port if paused
+	//
+	info.plan_num = 0;
+	info.success_num = 0;
+	//set cmd "deploy"
+	strncpy(info.cmd,"deploy",SS_CFG_OPT_SIZE_SMALL);
+	info.cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
+
+	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"select ip,port from (select * from portList where used=%d and peroid!=%d and peroid_times>0 and (julianday(date('now'))-julianday(peroid_start))>=peroid) natural join ipList;",DB_PORT_PAUSED,DB_PORT_NOLIMIT);
+	sqlite3_exec(obj->db,cmd,sql_ssmanCmd_cb,&info,NULL);
+	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set dataUsage=0,peroid_times=peroid_times-1,peroid_start=date('now'),used=%d where used!=%d and peroid!=%d and peroid_times>0 and (julianday(date('now'))-julianday(peroid_start))>=peroid;",DB_PORT_RUNNING,DB_PORT_READY,DB_PORT_NOLIMIT);
+	sqlite3_exec(obj->db,cmd,NULL,NULL,NULL);
+	//
+	//3.free expired port
+	//
+	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set used=%d where used=%d and (peroid=%d or (peroid!=%d and peroid_times=0));",DB_PORT_READY,DB_PORT_PAUSED,DB_PORT_NOLIMIT,DB_PORT_NOLIMIT);
 
 	json_value_free(json_obj);
 

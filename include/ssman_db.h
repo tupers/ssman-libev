@@ -6,8 +6,19 @@
 
 typedef ssman_event ssman_db_event;
 
+/*
+ * used option:
+ * 0:	not used,
+ * 1:	running,
+ * 2:	paused.when user datausage bigger than datalimit and will be refreshed in next peroid
+ */
+#define DB_PORT_NOLIMIT	0
+#define DB_PORT_READY	0
+#define DB_PORT_RUNNING	1
+#define DB_PORT_PAUSED	2
+
 #define SQL_CREATE_IPLIST 	"create table if not exists ipList(ip text primary key, ip_group integer default 0, flag integer default 0);"
-#define SQL_CREATE_PORTLIST	"create table if not exists portList(port integer, password text default \'00000000\', ip_group integer default 0, dataUsage integer default 0, dataLimit integer default -1, strategy integer default 0, used integer default 0, flag integer default 0);"
+#define SQL_CREATE_PORTLIST	"create table if not exists portList(port integer, password text default \'00000000\', ip_group integer default 0, dataUsage integer default 0, dataLimit integer default 0, strategy integer default 0, used integer default 0, flag integer default 0, peroid_start timestamp default current_date, peroid integer default 0, peroid_times integer default 0, owner integer default 0);"
 #define SQL_LIST_TABLE		"select name from sqlite_master where type = 'table' order by name;"
 
 #define SS_DB_DEFAULTPATH 	"/tmp/test.db"
