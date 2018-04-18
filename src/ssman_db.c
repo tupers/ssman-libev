@@ -236,7 +236,9 @@ static int parseMsg_ssman(char* msg, struct sockaddr_in* addr, ssman_db_obj* obj
 
 	//run strategy
 	//
-	//1.pause port which dataUsage is bigger than dataLimit
+	//1.pause port as combine plan which datausage bigger than datalimit;
+	//remove port as data only plan which datausage bigger than datalimit;
+	//remove port as peroid only plan which reach the last peroid
 	//
 	_server_ssman_cb_str info;
 	info.net.fd = obj->config->ssman_fd;
@@ -247,9 +249,15 @@ static int parseMsg_ssman(char* msg, struct sockaddr_in* addr, ssman_db_obj* obj
 	strncpy(info.cmd,"remove",SS_CFG_OPT_SIZE_SMALL);
 	info.cmd[SS_CFG_OPT_SIZE_SMALL-1] = '\0';
 	
-	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"select ip,port from (select * from portList where dataLimit!=%d and dataUsage>=dataLimit and used=%d) natrual join ipList;",DB_PORT_NOLIMIT,DB_PORT_RUNNING);
+	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"select ip,port from (select * from portList where used=%d and ((dataLimit!=%d and dataUsage>=dataLimit) or (dataLimit=%d and peroid!=%d and peroid_times=0 and (julianday(date('now'))-julianday(peroid_start))>=peroid))) natrual join ipList;",DB_PORT_RUNNING,DB_PORT_NOLIMIT,DB_PORT_NOLIMIT,DB_PORT_NOLIMIT);
 	sqlite3_exec(obj->db,cmd,sql_ssmanCmd_cb,&info,NULL);
-	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set used=%d where dataLimit!=%d and dataUsage>=dataLimit and used=%d;",DB_PORT_PAUSED,DB_PORT_NOLIMIT,DB_PORT_RUNNING);
+
+	//as data only plan
+	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set used=%d where used=%d and peroid=%d and dataLimit!=%d and dataUsage>=dataLimit;",DB_PORT_READY,DB_PORT_RUNNING,DB_PORT_NOLIMIT,
+	//as combine plan
+	
+	//as peroid only plan
+	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set used=%d where used=%d and dataLimit=%d and peroid!=%d and peroid_times=0 and (julianday(date('now'))-julianday(peroid_start))>=peroid;",DB_PORT_READY,DB_PORT_RUNNING,DB_PORT_NOLIMIT,DB_PORT_NOLIMIT);
 	sqlite3_exec(obj->db,cmd,NULL,NULL,NULL);
 	//
 	//2.refresh dataLimit if time reach peroid and restart port if paused
