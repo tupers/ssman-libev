@@ -13,6 +13,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define SSMAN_VERSION 0.3
+
 //err code
 #define SS_OK 	0
 #define SS_ERR	-1

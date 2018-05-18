@@ -65,6 +65,9 @@ int main(int argc, char **argv)
 			case 'u':
 				update = 1;
 				break;
+			case 'v':
+				printf("%f\n",SSMAN_VERSION);
+				break;
 			case '?':
 				opterr = 1;
 				break;

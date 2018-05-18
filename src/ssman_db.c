@@ -253,7 +253,7 @@ static int parseMsg_ssman(char* msg, struct sockaddr_in* addr, ssman_db_obj* obj
 	sqlite3_exec(obj->db,cmd,sql_ssmanCmd_cb,&info,NULL);
 
 	//as data only plan
-	snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set used=%d where used=%d and peroid=%d and dataLimit!=%d and dataUsage>=dataLimit;",DB_PORT_READY,DB_PORT_RUNNING,DB_PORT_NOLIMIT,
+	//snprintf(cmd,SS_CFG_OPT_SIZE_LARGE,"update portList set used=%d where used=%d and peroid=%d and dataLimit!=%d and dataUsage>=dataLimit;",DB_PORT_READY,DB_PORT_RUNNING,DB_PORT_NOLIMIT,
 	//as combine plan
 	
 	//as peroid only plan
